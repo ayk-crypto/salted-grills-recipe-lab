@@ -5,51 +5,108 @@ export default function ApprovalLockEnhancer(){
  useEffect(()=>{
   let currentId=null,currentLocked=false,pendingApprove=false;
   const originalFetch=window.fetch.bind(window);
+
   window.fetch=async(input,init={})=>{
    const url=typeof input==='string'?input:input?.url||'';
    const method=(init?.method||'GET').toUpperCase();
-   const res=await originalFetch(input,init);
+   let nextInit=init;
+
+   // Approve must be persisted as approved, regardless of React render timing.
+   if(pendingApprove&&((method==='PUT'&&/^\/api\/recipes\/[^/]+$/.test(url))||(method==='POST'&&url==='/api/recipes'))){
+    try{
+     const body=init?.body?JSON.parse(init.body):{};
+     nextInit={...init,headers:{...(init?.headers||{}),'Content-Type':'application/json'},body:JSON.stringify({...body,status:'approved'})};
+    }catch{}
+   }
+
+   const res=await originalFetch(input,nextInit);
    try{
     if(method==='GET'&&/^\/api\/recipes\/[^/]+$/.test(url)&&res.ok){
-     const j=await res.clone().json();currentId=j.id||url.split('/').pop();currentLocked=!!j.is_locked;
+     const j=await res.clone().json();
+     currentId=j.id||url.split('/').pop();
+     currentLocked=!!j.is_locked;
      setTimeout(apply,0);
     }
+
     if(pendingApprove&&res.ok&&((method==='PUT'&&/^\/api\/recipes\/[^/]+$/.test(url))||(method==='POST'&&url==='/api/recipes'))){
-     const j=await res.clone().json();const id=method==='PUT'?url.split('/').pop():j?.recipe?.id;
-     if(id){await originalFetch(`/api/recipes/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_locked:true})});currentId=id;currentLocked=true;}
+     const j=await res.clone().json();
+     const id=method==='PUT'?url.split('/').pop():j?.recipe?.id;
+     if(id){
+      const lockRes=await originalFetch(`/api/recipes/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_locked:true})});
+      if(lockRes.ok){currentId=id;currentLocked=true;}
+     }
      pendingApprove=false;
     }
-   }catch{}
+   }catch{pendingApprove=false}
    return res;
   };
 
-  function setNativeValue(el,value){
-   const proto=el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;
-   const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;setter?.call(el,value);
-   el.dispatchEvent(new Event('change',{bubbles:true}));
+  function applyLockedState(page){
+   let banner=page.querySelector('.approval-lock-banner');
+   if(!banner){
+    const content=page.querySelector('.editor-content');
+    if(content){
+     banner=document.createElement('div');
+     banner.className='approval-lock-banner';
+     banner.innerHTML='<strong>🔒 Approved & locked</strong><span>This kitchen standard is protected from accidental changes.</span>';
+     content.prepend(banner);
+    }
+   }
+   page.querySelectorAll('input,select,textarea,.entry-primary,.type-grid button,.mini-link,.component-row button,.photo').forEach(el=>{
+    if(!el.closest('.editor-actions')){el.disabled=true;el.style.pointerEvents='none';}
+   });
   }
+
   function apply(){
-   const page=document.querySelector('.editor-page');if(!page)return;
-   document.querySelectorAll('.approval-lock-banner,.approve-lock-btn').forEach(x=>x.remove());
+   const page=document.querySelector('.editor-page');
+   if(!page)return;
+
    if(currentLocked){
-    const content=document.querySelector('.editor-content');if(content){const b=document.createElement('div');b.className='approval-lock-banner';b.innerHTML='<strong>🔒 Approved & locked</strong><span>This kitchen standard is protected from accidental changes.</span>';content.prepend(b);}
-    page.querySelectorAll('input,select,textarea,.entry-primary,.type-grid button,.mini-link,.component-row button,.photo').forEach(el=>{if(!el.closest('.editor-actions')){el.disabled=true;el.style.pointerEvents='none';}});
+    page.querySelector('.approve-lock-btn')?.remove();
+    applyLockedState(page);
     return;
    }
-   const finishActive=[...document.querySelectorAll('.wizard button')].some(b=>b.classList.contains('active')&&b.textContent.toLowerCase().includes('finish'));
-   if(!finishActive)return;
-   const footer=document.querySelector('.editor-footer');if(!footer)return;
-   const save=[...footer.querySelectorAll('button')].find(b=>/save recipe/i.test(b.textContent));if(!save)return;
-   save.textContent='Save Draft';save.classList.remove('continue');
-   const approve=document.createElement('button');approve.className='continue approve-lock-btn';approve.textContent='✓ Approve & Lock Recipe';
-   approve.onclick=()=>{
-    const status=[...page.querySelectorAll('select')].find(s=>[...s.options].some(o=>o.value==='approved'));
-    if(status)setNativeValue(status,'approved');
-    pendingApprove=true;setTimeout(()=>save.click(),0);
-   };
-   footer.appendChild(approve);
+
+   const banner=page.querySelector('.approval-lock-banner');
+   if(banner)banner.remove();
+
+   const finishActive=[...page.querySelectorAll('.wizard button')].some(b=>b.classList.contains('active')&&(b.textContent||'').toLowerCase().includes('finish'));
+   const footer=page.querySelector('.editor-footer');
+   if(!footer)return;
+
+   const approveExisting=footer.querySelector('.approve-lock-btn');
+   if(!finishActive){
+    approveExisting?.remove();
+    return;
+   }
+
+   const buttons=[...footer.querySelectorAll('button:not(.approve-lock-btn)')];
+   const save=buttons.find(b=>/save recipe|save draft/i.test(b.textContent||''));
+   if(!save)return;
+
+   save.textContent='Save Draft';
+   save.classList.add('draft-final-btn');
+
+   if(!approveExisting){
+    const approve=document.createElement('button');
+    approve.type='button';
+    approve.className='continue approve-lock-btn';
+    approve.textContent='✓ Approve & Lock Recipe';
+    approve.onclick=()=>{
+     if(approve.disabled)return;
+     approve.disabled=true;
+     approve.textContent='Approving…';
+     pendingApprove=true;
+     save.click();
+     setTimeout(()=>{if(document.body.contains(approve)){approve.disabled=false;approve.textContent='✓ Approve & Lock Recipe';pendingApprove=false;}},8000);
+    };
+    footer.appendChild(approve);
+   }
   }
-  const mo=new MutationObserver(()=>requestAnimationFrame(apply));mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});apply();
+
+  const mo=new MutationObserver(()=>requestAnimationFrame(apply));
+  mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+  apply();
   return()=>{mo.disconnect();window.fetch=originalFetch};
  },[]);
  return null;
