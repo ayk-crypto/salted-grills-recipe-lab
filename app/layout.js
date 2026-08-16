@@ -8,6 +8,7 @@ import "./mobile-nav.css";
 import "./autosave.css";
 import "./mobile-stabilization.css";
 import "./mobile-ux-fixes.css";
+import "./finish-experience.css";
 import { Manrope } from "next/font/google";
 import DeleteEnhancer from "./DeleteEnhancer";
 import SearchableIngredientSelect from "./SearchableIngredientSelect";
