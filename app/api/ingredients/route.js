@@ -17,3 +17,23 @@ export async function POST(req) {
     return NextResponse.json({error:e.message}, {status:500});
   }
 }
+
+export async function DELETE(req) {
+  try {
+    const { id } = await req.json();
+    if (!id) return NextResponse.json({error:"Ingredient id is required"}, {status:400});
+    const sql = db();
+    const [usage] = await sql`
+      SELECT count(*)::int AS count FROM recipe_components WHERE ingredient_id = ${id}
+    `;
+    if ((usage?.count || 0) > 0) {
+      await sql`UPDATE ingredients SET is_active = false, updated_at = now() WHERE id = ${id}`;
+      return NextResponse.json({ok:true, mode:"deactivated", message:"Ingredient is used in a recipe, so it was hidden from the active ingredient list."});
+    }
+    await sql`DELETE FROM ingredient_prices WHERE ingredient_id = ${id}`;
+    await sql`DELETE FROM ingredients WHERE id = ${id}`;
+    return NextResponse.json({ok:true, mode:"deleted"});
+  } catch (e) {
+    return NextResponse.json({error:e.message}, {status:500});
+  }
+}
