@@ -7,6 +7,16 @@ export default function UnitsEnhancer(){
   useEffect(()=>{reload()},[]);
 
   useEffect(()=>{
+    const navHandler=e=>{
+      const target=e.detail?.target;
+      if(target==='units'){setShowMaster(true);setShowAdd(false)}
+      else {setShowMaster(false);setShowAdd(false)}
+    };
+    window.addEventListener('sg:navigate',navHandler);
+    return()=>window.removeEventListener('sg:navigate',navHandler);
+  },[]);
+
+  useEffect(()=>{
     function sync(){
       const nav=document.querySelector('.side-nav');
       if(nav&&!nav.querySelector('[data-units-nav]')){
