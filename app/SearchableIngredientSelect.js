@@ -5,6 +5,30 @@ import { useEffect } from "react";
 export default function SearchableIngredientSelect() {
   useEffect(() => {
     let activeCleanup = null;
+    let bootstrap = { ingredients: [], recipes: [] };
+
+    fetch('/api/bootstrap', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => { if (j && !j.error) bootstrap = j; })
+      .catch(() => {});
+
+    const applyDefaultUnit = (value) => {
+      const unit = document.getElementById('unit');
+      if (!unit || !value) return;
+      let suggested = '';
+      if (value.startsWith('bulk:')) {
+        const id = value.slice(5);
+        suggested = bootstrap.recipes?.find(r => r.id === id)?.yield_unit || '';
+      } else {
+        suggested = bootstrap.ingredients?.find(i => i.id === value)?.default_unit || '';
+      }
+      if (!suggested) return;
+      const exists = Array.from(unit.options).some(o => o.value === suggested);
+      if (exists) {
+        unit.value = suggested;
+        unit.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    };
 
     const enhance = () => {
       const select = document.getElementById("comp");
@@ -75,6 +99,7 @@ export default function SearchableIngredientSelect() {
         select.dispatchEvent(new Event("change", { bubbles: true }));
         input.value = item.label;
         input.dataset.selectedValue = item.value;
+        applyDefaultUnit(item.value);
         closeMenu();
       };
 
