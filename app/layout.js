@@ -4,6 +4,7 @@ import "./searchable-ingredient.css";
 import "./packaging.css";
 import "./kitchen-workflow.css";
 import "./units.css";
+import "./mobile-nav.css";
 import { Manrope } from "next/font/google";
 import DeleteEnhancer from "./DeleteEnhancer";
 import SearchableIngredientSelect from "./SearchableIngredientSelect";
@@ -11,6 +12,7 @@ import PackagingEnhancer from "./PackagingEnhancer";
 import KitchenWorkflowEnhancer from "./KitchenWorkflowEnhancer";
 import UnitsEnhancer from "./UnitsEnhancer";
 import NavigationCoordinator from "./NavigationCoordinator";
+import MobileNavigation from "./MobileNavigation";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -33,5 +35,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><MobileNavigation/><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/>{children}</body></html>;
 }
