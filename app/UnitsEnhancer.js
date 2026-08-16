@@ -25,23 +25,16 @@ export default function UnitsEnhancer(){
         const btn=document.createElement('button');btn.dataset.unitsNav='1';btn.innerHTML='<i>↔</i>Units';btn.onclick=()=>setShowMaster(true);
         (packaging||categories)?.insertAdjacentElement('afterend',btn);
       }
-      const selects=[...document.querySelectorAll('select#unit')];
-      selects.forEach(sel=>{
-        const current=sel.value;
-        const options=units.length?units:[];
-        if(options.length){sel.innerHTML=options.map(u=>`<option value="${u.symbol}">${u.symbol} — ${u.name}</option>`).join('');if(options.some(u=>u.symbol===current))sel.value=current}
-        const field=sel.closest('.form-field');
-        if(field&&!field.querySelector('.unit-add-link')){
-          const b=document.createElement('button');b.type='button';b.className='unit-add-link';b.textContent='＋ Add custom unit';b.onclick=()=>setShowAdd(true);field.appendChild(b)
-        }
-      });
-      const finishSelect=[...document.querySelectorAll('.editor-content select')].find(s=>s!==document.getElementById('unit')&&s.closest('.double')&&[...s.options].some(o=>o.value==='portion'));
-      if(finishSelect&&units.length){const current=finishSelect.value;finishSelect.innerHTML=units.map(u=>`<option value="${u.symbol}">${u.symbol} — ${u.name}</option>`).join('');if(units.some(u=>u.symbol===current))finishSelect.value=current}
+      const unitSelect=document.querySelector('select#unit');
+      const field=unitSelect?.closest('.form-field');
+      if(field&&!field.querySelector('.unit-add-link')){
+        const b=document.createElement('button');b.type='button';b.className='unit-add-link';b.textContent='＋ Add custom unit';b.onclick=()=>setShowAdd(true);field.appendChild(b)
+      }
     }
     const obs=new MutationObserver(sync);obs.observe(document.body,{childList:true,subtree:true});sync();return()=>obs.disconnect();
-  },[units]);
+  },[]);
 
-  async function saveUnit(e){e.preventDefault();const body=Object.fromEntries(new FormData(e.currentTarget));const r=await fetch('/api/units',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)return alert(j.error||'Could not save unit');setShowAdd(false);await reload();setTimeout(()=>{const sel=document.getElementById('unit');if(sel)sel.value=j.symbol},80)}
+  async function saveUnit(e){e.preventDefault();const body=Object.fromEntries(new FormData(e.currentTarget));const r=await fetch('/api/units',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)return alert(j.error||'Could not save unit');setShowAdd(false);await reload();window.location.reload()}
   async function removeUnit(u){if(!confirm(`Remove “${u.symbol} — ${u.name}” from active units?`))return;const r=await fetch('/api/units',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:u.id})});const j=await r.json();if(!r.ok)return alert(j.error||'Could not remove unit');await reload()}
   const filtered=useMemo(()=>units.filter(u=>(u.name+' '+u.symbol+' '+(u.unit_group||'')).toLowerCase().includes(query.toLowerCase())),[units,query]);
 
