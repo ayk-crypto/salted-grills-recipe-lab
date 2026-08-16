@@ -10,6 +10,7 @@ import "./mobile-stabilization.css";
 import "./mobile-ux-fixes.css";
 import "./recipe-actions.css";
 import "./native-v2.css";
+import "./recipe-actions-v2.css";
 import { Manrope } from "next/font/google";
 import DeleteEnhancer from "./DeleteEnhancer";
 import SearchableIngredientSelect from "./SearchableIngredientSelect";
