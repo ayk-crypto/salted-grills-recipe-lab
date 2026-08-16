@@ -42,6 +42,13 @@ export async function POST(req) {
           VALUES (${version.id}, ${p.photo_type}, ${p.storage_key||`inline:${Date.now()}`}, ${p.public_url}, ${p.caption||null})
         `;
       }
+      if ((b.recipe_type||"menu") === "menu") {
+        for (const p of (b.packaging||[])) {
+          if(!p.packaging_item_id || !p.order_type || !(Number(p.quantity)>0)) continue;
+          await tx`INSERT INTO recipe_packaging (recipe_id,order_type,packaging_item_id,quantity)
+                   VALUES (${recipe.id},${p.order_type},${p.packaging_item_id},${Number(p.quantity)})`;
+        }
+      }
       await tx`UPDATE recipes SET current_version_id=${version.id}, updated_at=now() WHERE id=${recipe.id}`;
       return {recipe, version};
     });
