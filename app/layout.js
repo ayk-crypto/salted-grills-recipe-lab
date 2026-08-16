@@ -11,6 +11,7 @@ import PackagingEnhancer from "./PackagingEnhancer";
 import KitchenWorkflowEnhancer from "./KitchenWorkflowEnhancer";
 import MethodStepFix from "./MethodStepFix";
 import UnitsEnhancer from "./UnitsEnhancer";
+import NavigationCoordinator from "./NavigationCoordinator";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -33,5 +34,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><MethodStepFix/><UnitsEnhancer/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><MethodStepFix/><UnitsEnhancer/>{children}</body></html>;
 }
