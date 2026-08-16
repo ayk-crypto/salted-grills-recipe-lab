@@ -29,5 +29,18 @@ export async function getRecipe(id) {
     WHERE recipe_version_id = ${recipe.version_id}
     ORDER BY step_no
   ` : [];
-  return {...recipe, components, steps};
+  const photos = recipe.version_id ? await sql`
+    SELECT id, photo_type, storage_key, public_url, caption, created_at
+    FROM recipe_photos
+    WHERE recipe_version_id = ${recipe.version_id}
+    ORDER BY created_at
+  ` : [];
+  const versions = await sql`
+    SELECT id, version_no, status, yield_quantity, yield_unit,
+           prep_time_minutes, cook_time_minutes, created_at
+    FROM recipe_versions
+    WHERE recipe_id = ${id}
+    ORDER BY version_no DESC
+  `;
+  return {...recipe, components, steps, photos, versions};
 }
