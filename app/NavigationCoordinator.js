@@ -8,11 +8,19 @@ export default function NavigationCoordinator(){
       if(!btn)return;
       const target=btn.dataset.unitsNav?'units':btn.dataset.packagingNav?'packaging':'main';
 
-      // Tell independently-rendered master screens to close when another section is selected.
+      // Close independent master overlays when navigating elsewhere.
+      if(target!=='units'){
+        document.querySelector('.unit-modal header button')?.click();
+        document.querySelector('.units-master .units-close')?.click();
+      }
+      if(target!=='packaging'){
+        document.querySelector('.pkg-modal header button')?.click();
+        document.querySelector('.pkg-master .pkg-search button:last-child')?.click();
+      }
       window.dispatchEvent(new CustomEvent('sg:navigate',{detail:{target}}));
 
-      // The recipe editor is a top-level render state. Let its sidebar handler select
-      // the destination first, then close the editor so that destination becomes visible.
+      // Sidebar handlers change the destination state. The editor itself is a separate
+      // top-level state, so close it immediately afterwards to reveal that destination.
       if(document.querySelector('.editor-page')){
         const close=document.querySelector('.editor-page .close-x');
         if(close) setTimeout(()=>close.click(),0);
