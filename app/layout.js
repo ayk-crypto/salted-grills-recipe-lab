@@ -1,6 +1,7 @@
 import "./globals.css";
 import "./category-fixes.css";
 import { Manrope } from "next/font/google";
+import DeleteEnhancer from "./DeleteEnhancer";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -23,5 +24,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><DeleteEnhancer/>{children}</body></html>;
 }
