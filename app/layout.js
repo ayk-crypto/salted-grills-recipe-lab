@@ -17,6 +17,7 @@ import UnitsEnhancer from "./UnitsEnhancer";
 import NavigationCoordinator from "./NavigationCoordinator";
 import MobileNavigation from "./MobileNavigation";
 import AutosaveRecovery from "./AutosaveRecovery";
+import ApprovalLockEnhancer from "./ApprovalLockEnhancer";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -39,5 +40,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><MobileNavigation/><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><MobileNavigation/><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/><ApprovalLockEnhancer/>{children}</body></html>;
 }
