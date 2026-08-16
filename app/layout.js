@@ -21,27 +21,9 @@ import NavigationCoordinator from "./NavigationCoordinator";
 import AutosaveRecovery from "./AutosaveRecovery";
 import RecipeActionsEnhancer from "./RecipeActionsEnhancer";
 import NativeBottomNav from "./NativeBottomNav";
+import AppFeedback from "./AppFeedback";
 
-const manrope = Manrope({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-manrope"
-});
-
-export const metadata = {
-  title: "Salted Grills Recipe Lab",
-  description: "Recipe engineering, bulk prep and optional costing.",
-  manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg", apple: "/icon.svg" }
-};
-
-export const viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  themeColor: "#123f31"
-};
-
-export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/><RecipeActionsEnhancer/><NativeBottomNav/>{children}</body></html>;
-}
+const manrope=Manrope({subsets:["latin"],display:"swap",variable:"--font-manrope"});
+export const metadata={title:"Salted Grills Recipe Lab",description:"Recipe engineering, bulk prep and optional costing.",manifest:"/manifest.webmanifest",icons:{icon:"/icon.svg",apple:"/icon.svg"}};
+export const viewport={width:"device-width",initialScale:1,viewportFit:"cover",themeColor:"#123f31"};
+export default function RootLayout({children}){return <html lang="en"><body className={manrope.variable}><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/><RecipeActionsEnhancer/><NativeBottomNav/><AppFeedback/>{children}</body></html>}
