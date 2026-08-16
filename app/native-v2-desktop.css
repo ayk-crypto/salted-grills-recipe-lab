@@ -1,0 +1,48 @@
+/* Desktop-first polish for native v2. Intentionally loaded after native-v2.css. */
+@media (min-width:821px){
+  html,body{overflow-x:hidden!important}
+  .layout{grid-template-columns:244px minmax(0,1fr)!important;min-width:0!important}
+  .sidebar{width:244px!important;min-width:244px!important;max-width:244px!important;overflow-x:hidden!important;overflow-y:auto!important;scrollbar-width:none!important}
+  .sidebar::-webkit-scrollbar{display:none!important}
+  .side-brand,.side-nav,.side-user{max-width:100%!important;min-width:0!important;overflow-x:hidden!important}
+  .side-nav{padding:0 0 92px!important}
+  .side-nav button{box-sizing:border-box!important;width:calc(100% - 20px)!important;max-width:calc(100% - 20px)!important;margin:2px 10px!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important}
+  .side-nav button i{flex:0 0 22px!important}
+  .side-user{left:10px!important;right:10px!important;width:auto!important;max-width:none!important;bottom:12px!important;box-sizing:border-box!important}
+  .main-shell{min-width:0!important;overflow-x:hidden!important}
+  .page-area{width:min(1180px,calc(100% - 64px))!important;max-width:1180px!important;padding:42px 0 64px!important;box-sizing:border-box!important}
+
+  .home-hero{min-height:0!important;padding:38px 42px!important;border-radius:24px!important;position:relative!important;overflow:hidden!important;background:linear-gradient(135deg,#123f31 0%,#174b3b 65%,#1d5b47 100%)!important;box-shadow:0 18px 50px rgba(18,63,49,.12)!important}
+  .home-hero:after{content:"";position:absolute;width:320px;height:320px;border-radius:50%;right:-110px;top:-170px;background:rgba(255,255,255,.055);pointer-events:none}
+  .home-hero span{font-size:9px!important;letter-spacing:.17em!important}
+  .home-hero h1{max-width:690px!important;font-size:36px!important;line-height:1.05!important;letter-spacing:-.045em!important;margin:10px 0 8px!important}
+  .home-hero p{font-size:13px!important;max-width:540px!important;opacity:.84!important}
+  .home-hero button{min-height:46px!important;padding:0 18px!important;border-radius:12px!important;margin-top:18px!important;font-size:12px!important;font-weight:850!important;box-shadow:0 8px 20px rgba(0,0,0,.08)!important}
+
+  .metrics{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:12px!important;margin:14px 0 32px!important}
+  .metrics>div{min-height:92px!important;border:1px solid var(--v2-line)!important;border-radius:18px!important;background:#fff!important;padding:18px 20px!important;box-shadow:0 3px 14px rgba(22,35,31,.025)!important;position:relative!important;overflow:hidden!important}
+  .metrics>div:before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:3px;border-radius:5px;background:#d5a23e;opacity:.78}
+  .metrics b{font-size:25px!important;line-height:1!important;letter-spacing:-.04em!important}
+  .metrics span{font-size:10px!important;margin-top:8px!important;color:#7b8983!important}
+
+  .section-title{margin:0 0 12px!important;padding:0 2px!important;align-items:end!important}
+  .section-title small{font-size:8px!important;letter-spacing:.14em!important;color:#b3822c!important}
+  .section-title h2{font-size:22px!important;letter-spacing:-.035em!important;margin-top:4px!important}
+  .section-title button{border:0!important;background:transparent!important;color:#174b3b!important;font-size:11px!important;font-weight:850!important;padding:8px 2px!important}
+
+  .section-title + .list:empty{display:block!important;min-height:210px!important;border:1px dashed #d8dfda!important;border-radius:20px!important;background:linear-gradient(180deg,#fafbf9,#f7f8f5)!important;position:relative!important}
+  .section-title + .list:empty:before{content:"No recipes yet\A\AStart your first menu or bulk recipe. Autosaved work will remain available in Drafts.";white-space:pre-line;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,80%);text-align:center;color:#718078;font-size:12px;line-height:1.55}
+  .section-title + .list:empty:after{content:"＋";position:absolute;left:50%;top:42px;transform:translateX(-50%);width:42px;height:42px;border-radius:13px;background:#edf4f0;color:#174b3b;display:grid;place-items:center;font-size:21px;font-weight:800}
+
+  .list-card{min-height:76px!important;padding:12px 14px!important;border-radius:16px!important;margin-bottom:8px!important}
+  .autosave-fab{display:none!important}
+}
+
+/* Keep the dashboard intentional on medium desktop widths too. */
+@media (min-width:821px) and (max-width:1100px){
+  .layout{grid-template-columns:220px minmax(0,1fr)!important}
+  .sidebar{width:220px!important;min-width:220px!important;max-width:220px!important}
+  .page-area{width:calc(100% - 40px)!important;padding-top:28px!important}
+  .home-hero{padding:30px 32px!important}.home-hero h1{font-size:31px!important}
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
