@@ -9,6 +9,7 @@ import "./autosave.css";
 import "./mobile-stabilization.css";
 import "./mobile-ux-fixes.css";
 import "./recipe-actions.css";
+import "./native-v2.css";
 import { Manrope } from "next/font/google";
 import DeleteEnhancer from "./DeleteEnhancer";
 import SearchableIngredientSelect from "./SearchableIngredientSelect";
@@ -16,9 +17,9 @@ import PackagingEnhancer from "./PackagingEnhancer";
 import KitchenWorkflowEnhancer from "./KitchenWorkflowEnhancer";
 import UnitsEnhancer from "./UnitsEnhancer";
 import NavigationCoordinator from "./NavigationCoordinator";
-import MobileNavigation from "./MobileNavigation";
 import AutosaveRecovery from "./AutosaveRecovery";
 import RecipeActionsEnhancer from "./RecipeActionsEnhancer";
+import NativeBottomNav from "./NativeBottomNav";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -41,5 +42,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><MobileNavigation/><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/><RecipeActionsEnhancer/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/><RecipeActionsEnhancer/><NativeBottomNav/>{children}</body></html>;
 }
