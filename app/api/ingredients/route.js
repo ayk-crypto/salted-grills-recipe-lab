@@ -20,18 +20,22 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
-    const { id } = await req.json();
-    if (!id) return NextResponse.json({error:"Ingredient id is required"}, {status:400});
+    const body = await req.json();
     const sql = db();
-    const [usage] = await sql`
-      SELECT count(*)::int AS count FROM recipe_components WHERE ingredient_id = ${id}
-    `;
+    let item;
+    if (body.id) {
+      [item] = await sql`SELECT id, name FROM ingredients WHERE id = ${body.id}`;
+    } else if (body.name) {
+      [item] = await sql`SELECT id, name FROM ingredients WHERE name = ${String(body.name).trim()}`;
+    }
+    if (!item) return NextResponse.json({error:"Ingredient not found"}, {status:404});
+    const [usage] = await sql`SELECT count(*)::int AS count FROM recipe_components WHERE ingredient_id = ${item.id}`;
     if ((usage?.count || 0) > 0) {
-      await sql`UPDATE ingredients SET is_active = false, updated_at = now() WHERE id = ${id}`;
+      await sql`UPDATE ingredients SET is_active = false, updated_at = now() WHERE id = ${item.id}`;
       return NextResponse.json({ok:true, mode:"deactivated", message:"Ingredient is used in a recipe, so it was hidden from the active ingredient list."});
     }
-    await sql`DELETE FROM ingredient_prices WHERE ingredient_id = ${id}`;
-    await sql`DELETE FROM ingredients WHERE id = ${id}`;
+    await sql`DELETE FROM ingredient_prices WHERE ingredient_id = ${item.id}`;
+    await sql`DELETE FROM ingredients WHERE id = ${item.id}`;
     return NextResponse.json({ok:true, mode:"deleted"});
   } catch (e) {
     return NextResponse.json({error:e.message}, {status:500});
