@@ -11,7 +11,6 @@ export default function ApprovalLockEnhancer(){
    const method=(init?.method||'GET').toUpperCase();
    let nextInit=init;
 
-   // Approve must be persisted as approved, regardless of React render timing.
    if(pendingApprove&&((method==='PUT'&&/^\/api\/recipes\/[^/]+$/.test(url))||(method==='POST'&&url==='/api/recipes'))){
     try{
      const body=init?.body?JSON.parse(init.body):{};
@@ -42,13 +41,14 @@ export default function ApprovalLockEnhancer(){
   };
 
   function applyLockedState(page){
+   page.classList.add('recipe-locked');
    let banner=page.querySelector('.approval-lock-banner');
    if(!banner){
     const content=page.querySelector('.editor-content');
     if(content){
      banner=document.createElement('div');
      banner.className='approval-lock-banner';
-     banner.innerHTML='<strong>🔒 Approved & locked</strong><span>This kitchen standard is protected from accidental changes.</span>';
+     banner.innerHTML='<div class="approval-lock-icon">🔒</div><div><strong>Approved kitchen standard</strong><span>This recipe is locked to prevent accidental changes.</span></div>';
      content.prepend(banner);
     }
    }
@@ -62,21 +62,29 @@ export default function ApprovalLockEnhancer(){
    if(!page)return;
 
    if(currentLocked){
+    page.classList.remove('finish-step-active');
     page.querySelector('.approve-lock-btn')?.remove();
     applyLockedState(page);
     return;
    }
 
+   page.classList.remove('recipe-locked');
    const banner=page.querySelector('.approval-lock-banner');
    if(banner)banner.remove();
 
    const finishActive=[...page.querySelectorAll('.wizard button')].some(b=>b.classList.contains('active')&&(b.textContent||'').toLowerCase().includes('finish'));
+   page.classList.toggle('finish-step-active',finishActive);
    const footer=page.querySelector('.editor-footer');
    if(!footer)return;
+
+   const statusSelect=[...page.querySelectorAll('.editor-content select')].find(s=>[...s.options].some(o=>o.value==='approved'));
+   const statusField=statusSelect?.closest('.form-field');
+   if(statusField)statusField.classList.toggle('finish-status-field',finishActive);
 
    const approveExisting=footer.querySelector('.approve-lock-btn');
    if(!finishActive){
     approveExisting?.remove();
+    footer.querySelector('.draft-final-btn')?.classList.remove('draft-final-btn');
     return;
    }
 
@@ -91,14 +99,22 @@ export default function ApprovalLockEnhancer(){
     const approve=document.createElement('button');
     approve.type='button';
     approve.className='continue approve-lock-btn';
-    approve.textContent='✓ Approve & Lock Recipe';
+    approve.innerHTML='<span class="approve-lock-mark">✓</span><span><b>Approve & Lock</b><small>Final kitchen standard</small></span>';
     approve.onclick=()=>{
      if(approve.disabled)return;
      approve.disabled=true;
-     approve.textContent='Approving…';
+     approve.classList.add('is-saving');
+     approve.querySelector('b').textContent='Approving…';
      pendingApprove=true;
      save.click();
-     setTimeout(()=>{if(document.body.contains(approve)){approve.disabled=false;approve.textContent='✓ Approve & Lock Recipe';pendingApprove=false;}},8000);
+     setTimeout(()=>{
+      if(document.body.contains(approve)){
+       approve.disabled=false;
+       approve.classList.remove('is-saving');
+       const b=approve.querySelector('b');if(b)b.textContent='Approve & Lock';
+       pendingApprove=false;
+      }
+     },8000);
     };
     footer.appendChild(approve);
    }
