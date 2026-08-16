@@ -93,8 +93,8 @@ export default function KitchenWorkflowEnhancer(){
     function thumb(p,group){
       const wrap=document.createElement('div');
       wrap.className='kw-thumb';
-      const img=document.createElement('img');img.src=p.public_url;wrap.appendChild(img);
-      const x=document.createElement('button');x.type='button';x.textContent='×';x.onclick=()=>removePhoto(p,group);wrap.appendChild(x);
+      const img=document.createElement('img');img.src=p.public_url;img.alt='Step reference';wrap.appendChild(img);
+      const x=document.createElement('button');x.type='button';x.setAttribute('aria-label','Remove photo');x.textContent='×';x.onclick=()=>removePhoto(p,group);wrap.appendChild(x);
       return wrap;
     }
 
@@ -126,6 +126,7 @@ export default function KitchenWorkflowEnhancer(){
     }
 
     async function addStepFiles(stepNo,files){
+      if(!files.length)return;
       stepExtras[stepNo]=stepExtras[stepNo]||[];
       for(const f of files) stepExtras[stepNo].push(photoObj('during',await readFile(f),`step:${stepNo}`));
       scheduleSync();
@@ -154,16 +155,27 @@ export default function KitchenWorkflowEnhancer(){
         media.dataset.signature=signature;
         media.innerHTML='';
 
-        const left=document.createElement('div');left.className='kw-step-upload';
-        const label=document.createElement('label');
+        const head=document.createElement('div');head.className='kw-step-media-head';
+        const text=document.createElement('div');
+        const title=document.createElement('b');title.textContent='Step photos';
+        const hint=document.createElement('small');hint.textContent='Optional · add one or more reference images';
+        text.append(title,hint);
+
+        const label=document.createElement('label');label.className='kw-step-photo-button';
         const plus=document.createElement('span');plus.textContent='＋';
-        label.append(plus,document.createTextNode(' Add step photos'));
-        const input=document.createElement('input');input.type='file';input.accept='image/*';input.multiple=true;input.setAttribute('capture','environment');
+        const labelText=document.createElement('strong');labelText.textContent=photos.length?'Add more':'Take / Add Photo';
+        label.append(plus,labelText);
+        const input=document.createElement('input');input.type='file';input.accept='image/*';input.multiple=true;
         input.onchange=e=>addStepFiles(stepNo,[...(e.target.files||[])]);
-        label.appendChild(input);left.appendChild(label);
-        const count=document.createElement('small');count.textContent=photos.length?`${photos.length} photo${photos.length===1?'':'s'}`:'Optional';left.appendChild(count);
-        media.appendChild(left);
-        const strip=document.createElement('div');strip.className='kw-thumb-strip';photos.forEach(p=>strip.appendChild(thumb(p,`step:${stepNo}`)));media.appendChild(strip);
+        label.appendChild(input);
+        head.append(text,label);
+        media.appendChild(head);
+
+        if(photos.length){
+          const strip=document.createElement('div');strip.className='kw-thumb-strip kw-step-thumbs';
+          photos.forEach(p=>strip.appendChild(thumb(p,`step:${stepNo}`)));
+          media.appendChild(strip);
+        }
       });
     }
 
