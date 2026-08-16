@@ -3,14 +3,14 @@
 @media (max-width: 820px){
   .layout{display:block;min-height:100vh}
   .main-shell{width:100%;min-height:100vh}
-  .sidebar{position:fixed;left:0;top:0;bottom:0;width:min(84vw,320px);height:100dvh;z-index:1002;transform:translateX(-105%);transition:transform .22s ease;box-shadow:18px 0 45px rgba(0,0,0,.2);padding-top:22px}
-  body.mobile-nav-open .sidebar{transform:translateX(0)}
-  body.mobile-nav-open{overflow:hidden}
-  .mobile-menu-button{display:flex;position:fixed;left:14px;top:14px;z-index:1004;width:44px;height:44px;border:1px solid rgba(18,63,49,.12);border-radius:13px;background:#fffdf8;box-shadow:0 8px 24px rgba(19,48,38,.12);align-items:center;justify-content:center;flex-direction:column;gap:4px;padding:0}
+  .sidebar{display:flex!important;position:fixed!important;left:0;top:0;bottom:0;width:min(84vw,320px);height:100dvh;z-index:1002;transform:translate3d(-105%,0,0)!important;transition:transform .22s ease;box-shadow:18px 0 45px rgba(0,0,0,.2);padding-top:22px;visibility:visible!important;opacity:1!important;pointer-events:auto}
+  html.mobile-nav-open .sidebar,body.mobile-nav-open .sidebar,body[data-mobile-nav="open"] .sidebar{transform:translate3d(0,0,0)!important}
+  html.mobile-nav-open,body.mobile-nav-open{overflow:hidden}
+  .mobile-menu-button{display:flex!important;position:fixed;left:14px;top:14px;z-index:1004;width:44px;height:44px;border:1px solid rgba(18,63,49,.12);border-radius:13px;background:#fffdf8;box-shadow:0 8px 24px rgba(19,48,38,.12);align-items:center;justify-content:center;flex-direction:column;gap:4px;padding:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   .mobile-menu-button span{display:block;width:18px;height:2px;border-radius:2px;background:#123f31;transition:.2s}
-  body.mobile-nav-open .mobile-menu-button span:nth-child(1){transform:translateY(6px) rotate(45deg)}
-  body.mobile-nav-open .mobile-menu-button span:nth-child(2){opacity:0}
-  body.mobile-nav-open .mobile-menu-button span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+  .mobile-menu-button.is-open span:nth-child(1),html.mobile-nav-open .mobile-menu-button span:nth-child(1),body.mobile-nav-open .mobile-menu-button span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+  .mobile-menu-button.is-open span:nth-child(2),html.mobile-nav-open .mobile-menu-button span:nth-child(2),body.mobile-nav-open .mobile-menu-button span:nth-child(2){opacity:0}
+  .mobile-menu-button.is-open span:nth-child(3),html.mobile-nav-open .mobile-menu-button span:nth-child(3),body.mobile-nav-open .mobile-menu-button span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
   .mobile-nav-backdrop{display:block;position:fixed;inset:0;z-index:1001;border:0;background:rgba(12,28,22,.42);opacity:0;pointer-events:none;transition:opacity .2s ease;padding:0}
   .mobile-nav-backdrop.show{opacity:1;pointer-events:auto}
   .page-area{padding:76px 16px 90px;max-width:none}
