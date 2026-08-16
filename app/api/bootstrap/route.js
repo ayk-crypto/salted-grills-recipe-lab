@@ -17,6 +17,9 @@ export async function GET() {
         ORDER BY ip.price_date DESC, ip.created_at DESC LIMIT 1) AS latest_price
       FROM ingredients i WHERE i.is_active = true ORDER BY i.name
     `;
+    const categories = await sql`
+      SELECT * FROM categories WHERE is_active = true ORDER BY name
+    `;
     const recipes = await sql`
       SELECT r.*, rv.version_no, rv.status, rv.yield_quantity, rv.yield_unit,
              rv.prep_time_minutes, rv.cook_time_minutes,
@@ -26,7 +29,7 @@ export async function GET() {
       WHERE r.is_active = true
       ORDER BY r.updated_at DESC, r.name
     `;
-    return NextResponse.json({ingredients, recipes});
+    return NextResponse.json({ingredients, categories, recipes});
   } catch (e) {
     return NextResponse.json({error: e.message}, {status: 500});
   }
