@@ -34,7 +34,7 @@ export default function AutosaveRecovery(){
    if(btn.closest('.type-grid')){snapshot.current.recipeType=txt.includes('bulk')?'bulk':'menu';mark()}
    if(txt.includes('add to recipe')){const raw=document.getElementById('comp')?.value,qty=document.getElementById('qty')?.value,unit=document.getElementById('unit')?.value;if(raw&&qty){snapshot.current.components.push({raw,qty,unit});mark()}}
    if(txt.includes('add step')){const instruction=document.getElementById('methodText')?.value?.trim(),seconds=document.getElementById('methodSecs')?.value;if(instruction){snapshot.current.steps.push({instruction,seconds});mark()}}
-   const compRow=btn.closest('.component-row');if(compRow&&txt==='×'){const rows=[...document.querySelectorAll('.component-row')];const method=compRow.classList.contains('method');const group=rows.filter(r=>r.classList.contains('method')===method);const ix=group.indexOf(compRow);if(ix>=0){if(method)snapshot.current.steps.splice(ix,1);else snapshot.current.components.splice(ix,1);mark()}}
+   const compRow=btn.closest('.component-row');if(compRow&&txt==='×'){const rows=[...document.querySelectorAll('.component-row')];const method=compRow.classList.contains('method');const group=rows.filter(r=>r.classList.contains('method')===method);const ix=group.indexOf(compRow);if(ix>=0){if(method){snapshot.current.steps.splice(ix,1);const next={};Object.entries(snapshot.current.photos||{}).forEach(([k,v])=>{const m=k.match(/^step:(\d+)$/);if(!m){next[k]=v;return}const n=Number(m[1]);if(n===ix+1)return;next[`step:${n>ix+1?n-1:n}`]=v});snapshot.current.photos=next}else snapshot.current.components.splice(ix,1);mark()}}
    if(btn.closest('.pkg-tabs')){const l=txt.includes('dine')?'dine_in':txt.includes('delivery')?'delivery':'takeaway';snapshot.current.packagingTab=l}
    if(btn.closest('.pkg-add')&&txt.includes('add')){const id=document.getElementById('packItem')?.value,qty=document.getElementById('packQty')?.value||'1';if(id){snapshot.current.packaging.push({order_type:snapshot.current.packagingTab||'takeaway',packaging_item_id:id,quantity:qty});mark()}}
    const pkgRow=btn.closest('.pkg-assigned>div');if(pkgRow&&txt==='×'){const type=snapshot.current.packagingTab||'takeaway';const visible=[...document.querySelectorAll('.pkg-assigned>div')];const ix=visible.indexOf(pkgRow);const matches=snapshot.current.packaging.map((p,i)=>({p,i})).filter(x=>x.p.order_type===type);if(matches[ix])snapshot.current.packaging.splice(matches[ix].i,1);mark()}
@@ -42,7 +42,7 @@ export default function AutosaveRecovery(){
   const change=e=>{
    if(!document.querySelector('.editor-page'))return;
    const el=e.target;if(!(el instanceof HTMLInputElement||el instanceof HTMLSelectElement||el instanceof HTMLTextAreaElement))return;
-   if(el.closest('.photo-grid')||el.closest('.kw-stage-gallery')||el.closest('.kw-step-media')){setTimeout(capturePhotos,250);return}
+   if(el.closest('.photo-grid')||el.closest('.kw-stage-gallery')||el.closest('.kw-step-media')){setTimeout(capturePhotos,250);mark();return}
    mark();captureVisibleFields();
   };
   document.addEventListener('click',click,true);document.addEventListener('input',change,true);document.addEventListener('change',change,true);
@@ -64,15 +64,15 @@ export default function AutosaveRecovery(){
    const units=[...document.querySelectorAll('.editor-content .double select')];if(units[0])snapshot.current.finish.yield_unit=units[0].value;
    capturePhotos();capturePackagingFromDom();
   }
+  if(step==='method')capturePhotos();
  }
  function capturePhotos(){
   const tiles=[...document.querySelectorAll('.photo-grid .photo')];const types=['prep','during','dine_in','takeaway','delivery','final'];
   tiles.forEach((tile,i)=>{const src=tile.querySelector('img')?.src;if(src&&src.startsWith('data:'))snapshot.current.photos[types[i]]=[src]});
   const galleries=[...document.querySelectorAll('.kw-stage-gallery section')];galleries.forEach(sec=>{const type=(sec.querySelector('header b')?.textContent||'').toLowerCase().includes('prep')?'prep':'during';const urls=[...sec.querySelectorAll('img')].map(i=>i.src).filter(x=>x.startsWith('data:'));if(urls.length)snapshot.current.photos[type]=[...new Set([...(snapshot.current.photos[type]||[]),...urls])]});
-  [...document.querySelectorAll('.component-row.method')].forEach((row,i)=>{const urls=[...row.querySelectorAll('.kw-step-media img')].map(x=>x.src).filter(x=>x.startsWith('data:'));if(urls.length)snapshot.current.photos[`step:${i+1}`]=urls});
+  [...document.querySelectorAll('.component-row.method')].forEach((row,i)=>{const urls=[...row.querySelectorAll('.kw-step-media img')].map(x=>x.src).filter(x=>x.startsWith('data:'));snapshot.current.photos[`step:${i+1}`]=urls});
  }
  function capturePackagingFromDom(){
-  // assignments are primarily captured at Add/Remove time; this preserves the selected tab.
   const tab=[...document.querySelectorAll('.pkg-tabs button')].find(b=>b.classList.contains('active'));if(tab){const t=(tab.textContent||'').toLowerCase();snapshot.current.packagingTab=t.includes('dine')?'dine_in':t.includes('delivery')?'delivery':'takeaway'}
  }
 
@@ -121,7 +121,11 @@ export default function AutosaveRecovery(){
   wizardButton('ingredients')?.click();await sleep(120);
   for(const c of d.components||[]){setNative(document.getElementById('comp'),c.raw);await sleep(25);setNative(document.getElementById('qty'),c.qty);setNative(document.getElementById('unit'),c.unit);[...document.querySelectorAll('.entry-primary')].find(x=>/add to recipe/i.test(x.textContent||''))?.click();await sleep(60)}
   wizardButton('method')?.click();await sleep(120);
-  for(const s of d.steps||[]){setNative(document.getElementById('methodText'),s.instruction);setNative(document.getElementById('methodSecs'),s.seconds||'');[...document.querySelectorAll('.entry-primary')].find(x=>/add step/i.test(x.textContent||''))?.click();await sleep(60)}
+  for(const s of d.steps||[]){setNative(document.getElementById('methodText'),s.instruction);setNative(document.getElementById('methodSecs'),s.seconds||'');[...document.querySelectorAll('.entry-primary')].find(x=>/add step/i.test(x.textContent||''))?.click();await sleep(80)}
+  await sleep(220);
+  const methodRows=[...document.querySelectorAll('.component-row.method')];
+  methodRows.forEach((row,i)=>{const input=row.querySelector('.kw-step-media input[type=file]');setFiles(input,d.photos?.[`step:${i+1}`]||[])});
+  await sleep(220);
   wizardButton('finish')?.click();await sleep(180);
   const finish=d.finish||{};setNative(fieldByLabel('usable yield'),finish.yield_quantity||'');const unit=[...document.querySelectorAll('.editor-content .double select')][0];setNative(unit,finish.yield_unit||'g');setNative(fieldByLabel('prep minutes'),finish.prep_time_minutes||'');setNative(fieldByLabel('cook minutes'),finish.cook_time_minutes||'');setNative(fieldByLabel('kitchen notes'),finish.kitchen_notes||'');setNative(fieldByLabel('status'),finish.status||'draft');
   const photoInputs=[...document.querySelectorAll('.photo-grid .photo input[type=file]')];['prep','during','dine_in','takeaway','delivery','final'].forEach((t,i)=>setFiles(photoInputs[i],d.photos?.[t]||[]));await sleep(250);
