@@ -3,45 +3,13 @@ import {useEffect} from "react";
 
 export default function NavigationCoordinator(){
   useEffect(()=>{
-    let editorOpen=false;
-    let dirty=false;
-
-    const syncEditor=()=>{
-      const open=!!document.querySelector('.editor-page');
-      if(open&&!editorOpen) dirty=false;
-      if(!open) dirty=false;
-      editorOpen=open;
-    };
-    const observer=new MutationObserver(syncEditor);
-    observer.observe(document.body,{childList:true,subtree:true});
-    syncEditor();
-
-    const markDirty=e=>{
-      if(!document.querySelector('.editor-page'))return;
-      if(e.target.closest?.('.editor-page')) dirty=true;
-    };
-    document.addEventListener('input',markDirty,true);
-    document.addEventListener('change',markDirty,true);
-    document.addEventListener('click',e=>{
-      if(!document.querySelector('.editor-page'))return;
-      if(e.target.closest?.('.type-grid button,.entry-primary,.component-row button,.photo,.pkg-recipe button,.kw-use-timer,.timer button')) dirty=true;
-    },true);
-
     const onClick=e=>{
       const btn=e.target.closest?.('.side-nav button');
       if(!btn)return;
 
-      if(document.querySelector('.editor-page')&&dirty){
-        const leave=window.confirm('This recipe has unsaved changes. Leave this screen and discard those changes?');
-        if(!leave){
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          return;
-        }
-        dirty=false;
-      }
-
+      // Recipe editing is continuously protected by AutosaveRecovery. Navigation should
+      // therefore feel like normal app navigation, not a destructive action. The draft
+      // remains recoverable from My Drafts / the recovery control after leaving.
       const target=btn.dataset.unitsNav?'units':btn.dataset.packagingNav?'packaging':'main';
 
       if(target!=='units'){
@@ -60,12 +28,7 @@ export default function NavigationCoordinator(){
       }
     };
     document.addEventListener('click',onClick,true);
-    return()=>{
-      observer.disconnect();
-      document.removeEventListener('input',markDirty,true);
-      document.removeEventListener('change',markDirty,true);
-      document.removeEventListener('click',onClick,true);
-    };
+    return()=>document.removeEventListener('click',onClick,true);
   },[]);
   return null;
 }
