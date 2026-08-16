@@ -35,6 +35,14 @@ export async function getRecipe(id) {
     WHERE recipe_version_id = ${recipe.version_id}
     ORDER BY created_at
   ` : [];
+  const packaging = await sql`
+    SELECT rp.id, rp.order_type, rp.packaging_item_id, rp.quantity,
+           p.name, p.unit_cost, p.purchase_unit
+    FROM recipe_packaging rp
+    JOIN packaging_items p ON p.id = rp.packaging_item_id
+    WHERE rp.recipe_id = ${id}
+    ORDER BY rp.order_type, p.name
+  `;
   const versions = await sql`
     SELECT id, version_no, status, yield_quantity, yield_unit,
            prep_time_minutes, cook_time_minutes, created_at
@@ -42,5 +50,5 @@ export async function getRecipe(id) {
     WHERE recipe_id = ${id}
     ORDER BY version_no DESC
   `;
-  return {...recipe, components, steps, photos, versions};
+  return {...recipe, components, steps, photos, packaging, versions};
 }
