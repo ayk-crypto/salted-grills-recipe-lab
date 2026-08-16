@@ -20,6 +20,9 @@ export async function GET() {
     const packaging = await sql`
       SELECT * FROM packaging_items WHERE is_active = true ORDER BY name
     `;
+    const units = await sql`
+      SELECT * FROM measurement_units WHERE is_active = true ORDER BY unit_group NULLS LAST, name
+    `;
     const categories = await sql`
       SELECT * FROM categories WHERE is_active = true ORDER BY name
     `;
@@ -32,7 +35,7 @@ export async function GET() {
       WHERE r.is_active = true
       ORDER BY r.updated_at DESC, r.name
     `;
-    return NextResponse.json({ingredients, packaging, categories, recipes});
+    return NextResponse.json({ingredients, packaging, units, categories, recipes});
   } catch (e) {
     return NextResponse.json({error: e.message}, {status: 500});
   }
