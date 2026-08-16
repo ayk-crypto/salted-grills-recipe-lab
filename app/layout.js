@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./category-fixes.css";
 import { Manrope } from "next/font/google";
 
 const manrope = Manrope({
