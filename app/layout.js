@@ -6,6 +6,7 @@ import "./kitchen-workflow.css";
 import "./units.css";
 import "./mobile-nav.css";
 import "./autosave.css";
+import "./mobile-stabilization.css";
 import { Manrope } from "next/font/google";
 import DeleteEnhancer from "./DeleteEnhancer";
 import SearchableIngredientSelect from "./SearchableIngredientSelect";
