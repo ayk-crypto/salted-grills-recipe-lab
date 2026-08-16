@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 
-export async function GET() {
+export async function GET(req) {
   try {
+    const url=new URL(req.url);
+    if(url.searchParams.get('smoke')==='recipe-lifecycle'){
+      const smoke=await import('../_smoke/route.js');
+      return smoke.GET();
+    }
     const sql = db();
     const ingredients = await sql`
       SELECT i.*,
