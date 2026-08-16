@@ -5,11 +5,43 @@ export async function GET(req, {params}) {
   try {
     const {id}=await params;
     const row=await getRecipe(id);
-    if(!row) return NextResponse.json({error:"Not found"}, {status:404});
+    if(!row || row.is_active===false) return NextResponse.json({error:"Not found"}, {status:404});
     return NextResponse.json(row);
   } catch(e) {
     return NextResponse.json({error:e.message}, {status:500});
   }
+}
+
+export async function PATCH(req, {params}) {
+  const {id}=await params;
+  const b=await req.json();
+  const sql=db();
+  try {
+    if(typeof b.is_locked!=="boolean") return NextResponse.json({error:"Invalid lock state"},{status:400});
+    const rows=await sql`
+      UPDATE recipes
+      SET is_locked=${b.is_locked}, locked_at=${b.is_locked?new Date():null}, updated_at=now()
+      WHERE id=${id} AND is_active=true
+      RETURNING id,name,is_locked,locked_at
+    `;
+    if(!rows.length) return NextResponse.json({error:"Recipe not found"},{status:404});
+    return NextResponse.json(rows[0]);
+  } catch(e){return NextResponse.json({error:e.message},{status:500});}
+}
+
+export async function DELETE(req, {params}) {
+  const {id}=await params;
+  const sql=db();
+  try {
+    const rows=await sql`
+      UPDATE recipes
+      SET is_active=false, updated_at=now()
+      WHERE id=${id} AND is_active=true
+      RETURNING id,name
+    `;
+    if(!rows.length) return NextResponse.json({error:"Recipe not found"},{status:404});
+    return NextResponse.json({ok:true,recipe:rows[0]});
+  } catch(e){return NextResponse.json({error:e.message},{status:500});}
 }
 
 export async function PUT(req, {params}) {
@@ -17,6 +49,10 @@ export async function PUT(req, {params}) {
   const b=await req.json();
   const sql=db();
   try {
+    const [recipeState]=await sql`SELECT is_active,is_locked FROM recipes WHERE id=${id}`;
+    if(!recipeState || !recipeState.is_active) return NextResponse.json({error:"Recipe not found"},{status:404});
+    if(recipeState.is_locked) return NextResponse.json({error:"This recipe is locked. Unlock it before editing."},{status:423});
+
     const result=await sql.transaction(async tx=>{
       const [current]=await tx`SELECT COALESCE(MAX(version_no),0)::int AS max_version FROM recipe_versions WHERE recipe_id=${id}`;
       const nextVersion=(current?.max_version||0)+1;
