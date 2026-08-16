@@ -35,6 +35,13 @@ export async function POST(req) {
           VALUES (${version.id}, ${n+1}, ${s.instruction}, ${s.duration_seconds || null})
         `;
       }
+      for (const p of (b.photos||[])) {
+        if(!p.public_url) continue;
+        await tx`
+          INSERT INTO recipe_photos (recipe_version_id, photo_type, storage_key, public_url, caption)
+          VALUES (${version.id}, ${p.photo_type}, ${p.storage_key||`inline:${Date.now()}`}, ${p.public_url}, ${p.caption||null})
+        `;
+      }
       await tx`UPDATE recipes SET current_version_id=${version.id}, updated_at=now() WHERE id=${recipe.id}`;
       return {recipe, version};
     });
