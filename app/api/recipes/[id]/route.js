@@ -45,6 +45,14 @@ export async function PUT(req, {params}) {
         await tx`INSERT INTO recipe_photos (recipe_version_id,photo_type,storage_key,public_url,caption)
                  VALUES (${version.id},${p.photo_type},${p.storage_key||`inline:${Date.now()}`},${p.public_url},${p.caption||null})`;
       }
+      await tx`DELETE FROM recipe_packaging WHERE recipe_id=${id}`;
+      if ((b.recipe_type||"menu") === "menu") {
+        for (const p of (b.packaging||[])) {
+          if(!p.packaging_item_id || !p.order_type || !(Number(p.quantity)>0)) continue;
+          await tx`INSERT INTO recipe_packaging (recipe_id,order_type,packaging_item_id,quantity)
+                   VALUES (${id},${p.order_type},${p.packaging_item_id},${Number(p.quantity)})`;
+        }
+      }
       await tx`UPDATE recipes SET name=${String(b.name||"").trim()}, recipe_type=${b.recipe_type||"menu"}, category=${b.category||null}, current_version_id=${version.id}, updated_at=now() WHERE id=${id}`;
       return {version};
     });
