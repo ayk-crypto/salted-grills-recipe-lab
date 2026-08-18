@@ -48,13 +48,23 @@ export default function PriceImportExperience(){
  },[ingredients]);
 
  function downloadTemplate(){
-  const sample=[{
-   "Ingredient Name":"Chicken Breast","Purchase Qty":5,"Purchase Unit":"kg","Purchase Price":4600,"Supplier":"Supplier Name","Price Date":today()
-  },{
-   "Ingredient Name":"Cooking Oil","Purchase Qty":5,"Purchase Unit":"L","Purchase Price":3150,"Supplier":"Supplier Name","Price Date":today()
-  }];
-  const ws=XLSX.utils.json_to_sheet(sample,{header:REQUIRED});ws['!cols']=[{wch:24},{wch:14},{wch:16},{wch:16},{wch:22},{wch:14}];
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Price Updates');XLSX.writeFile(wb,'Salted-Grills-Price-Import-Template.xlsx');
+  if(!ingredients.length){alert('Ingredients are still loading. Please try again in a moment.');return}
+  const templateRows=[...ingredients]
+   .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')))
+   .map(i=>({
+    "Ingredient Name":i.name,
+    "Purchase Qty":"",
+    "Purchase Unit":i.default_unit||"",
+    "Purchase Price":"",
+    "Supplier":"",
+    "Price Date":today()
+   }));
+  const ws=XLSX.utils.json_to_sheet(templateRows,{header:REQUIRED});
+  ws['!cols']=[{wch:30},{wch:14},{wch:16},{wch:16},{wch:24},{wch:14}];
+  ws['!freeze']={xSplit:0,ySplit:1};
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Price Updates');
+  XLSX.writeFile(wb,`Salted-Grills-Ingredient-Prices-${today()}.xlsx`);
  }
 
  async function readFile(file){
