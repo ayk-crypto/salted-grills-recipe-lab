@@ -4,11 +4,13 @@ import "./delete-controls.css";
 import "./premium-ui.css";
 import "./price-import.css";
 import "./ingredients-revamp.css";
+import "./categories-revamp.css";
 import { Manrope } from "next/font/google";
 import DeleteControls from "./DeleteControls";
 import PremiumExperience from "./PremiumExperience";
 import PriceImportExperience from "./PriceImportExperience";
 import IngredientsPageExperience from "./IngredientsPageExperience";
+import CategoriesPageExperience from "./CategoriesPageExperience";
 import ActionDeleteExperience from "./ActionDeleteExperience";
 
 const manrope = Manrope({
@@ -32,5 +34,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><PremiumExperience/><IngredientsPageExperience/><PriceImportExperience/><ActionDeleteExperience/><DeleteControls/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><PremiumExperience/><IngredientsPageExperience/><CategoriesPageExperience/><PriceImportExperience/><ActionDeleteExperience/><DeleteControls/>{children}</body></html>;
 }
