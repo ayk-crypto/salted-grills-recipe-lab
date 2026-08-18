@@ -14,6 +14,7 @@ import IngredientsPageExperience from "./IngredientsPageExperience";
 import CategoriesPageExperience from "./CategoriesPageExperience";
 import ActionDeleteExperience from "./ActionDeleteExperience";
 import RouteExperience from "./RouteExperience";
+import CategoryFormGuard from "./CategoryFormGuard";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -36,5 +37,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><RouteExperience/><PremiumExperience/><IngredientsPageExperience/><CategoriesPageExperience/><PriceImportExperience/><ActionDeleteExperience/><DeleteControls/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><RouteExperience/><PremiumExperience/><IngredientsPageExperience/><CategoriesPageExperience/><CategoryFormGuard/><PriceImportExperience/><ActionDeleteExperience/><DeleteControls/>{children}</body></html>;
 }
