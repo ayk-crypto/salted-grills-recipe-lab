@@ -1,8 +1,10 @@
 import "./globals.css";
 import "./costing-first.css";
 import "./delete-controls.css";
+import "./premium-ui.css";
 import { Manrope } from "next/font/google";
 import DeleteControls from "./DeleteControls";
+import PremiumExperience from "./PremiumExperience";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -21,9 +23,9 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#123f31"
+  themeColor: "#151a1d"
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><DeleteControls/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}><PremiumExperience/><DeleteControls/>{children}</body></html>;
 }
