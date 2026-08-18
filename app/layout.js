@@ -1,24 +1,6 @@
 import "./globals.css";
-import "./category-fixes.css";
-import "./searchable-ingredient.css";
-import "./packaging.css";
-import "./kitchen-workflow.css";
-import "./units.css";
-import "./mobile-nav.css";
-import "./autosave.css";
-import "./mobile-stabilization.css";
-import "./mobile-ux-fixes.css";
-import "./finish-experience.css";
+import "./costing-first.css";
 import { Manrope } from "next/font/google";
-import DeleteEnhancer from "./DeleteEnhancer";
-import SearchableIngredientSelect from "./SearchableIngredientSelect";
-import PackagingEnhancer from "./PackagingEnhancer";
-import KitchenWorkflowEnhancer from "./KitchenWorkflowEnhancer";
-import UnitsEnhancer from "./UnitsEnhancer";
-import NavigationCoordinator from "./NavigationCoordinator";
-import MobileNavigation from "./MobileNavigation";
-import AutosaveRecovery from "./AutosaveRecovery";
-import ApprovalLockEnhancer from "./ApprovalLockEnhancer";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -27,8 +9,8 @@ const manrope = Manrope({
 });
 
 export const metadata = {
-  title: "Salted Grills Recipe Lab",
-  description: "Recipe engineering, bulk prep and optional costing.",
+  title: "Salted Grills Costing Lab",
+  description: "Ingredient, bulk recipe and menu item costing for Salted Grills.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.svg", apple: "/icon.svg" }
 };
@@ -41,5 +23,5 @@ export const viewport = {
 };
 
 export default function RootLayout({children}) {
-  return <html lang="en"><body className={manrope.variable}><MobileNavigation/><NavigationCoordinator/><DeleteEnhancer/><SearchableIngredientSelect/><PackagingEnhancer/><KitchenWorkflowEnhancer/><UnitsEnhancer/><AutosaveRecovery/><ApprovalLockEnhancer/>{children}</body></html>;
+  return <html lang="en"><body className={manrope.variable}>{children}</body></html>;
 }
