@@ -26,6 +26,7 @@ export default function RouteExperience(){
   const router=useRouter();
   const applying=useRef(false);
   const lastPath=useRef('');
+  const hadEditor=useRef(false);
 
   useEffect(()=>{
     let stopped=false,timer;
@@ -56,6 +57,8 @@ export default function RouteExperience(){
                 const cards=[...document.querySelectorAll('.cost-card')];
                 const card=cards.find(c=>text(c.querySelector('.cost-card-main b'))===recipe.name);
                 card?.click();
+              } else if(!res.ok){
+                router.replace(m[1]==='bulk-recipes'?'/bulk-recipes':'/menu-items',{scroll:false});
               }
             }catch{}
           }
@@ -65,7 +68,7 @@ export default function RouteExperience(){
     }
     timer=setTimeout(applyRoute,0);
     return()=>{stopped=true;clearTimeout(timer)};
-  },[pathname]);
+  },[pathname,router]);
 
   useEffect(()=>{
     let data={recipes:[]};
@@ -111,21 +114,34 @@ export default function RouteExperience(){
   },[router]);
 
   useEffect(()=>{
-    const observer=new MutationObserver(()=>{
+    const syncEditorRoute=()=>{
       if(applying.current)return;
       const editor=document.querySelector('.cost-editor');
-      if(!editor)return;
-      const heading=text(editor.querySelector('.editor-title h1'));
-      const isBulk=heading.includes('Bulk Recipe');
-      const isNew=heading.startsWith('Add ');
-      if(isNew){
-        const wanted=isBulk?'/bulk-recipes/new':'/menu-items/new';
-        if(window.location.pathname!==wanted)window.history.replaceState({},'',wanted);
+      if(editor){
+        hadEditor.current=true;
+        const heading=text(editor.querySelector('.editor-title h1'));
+        const isBulk=heading.includes('Bulk Recipe');
+        const isNew=heading.startsWith('Add ');
+        if(isNew){
+          const wanted=isBulk?'/bulk-recipes/new':'/menu-items/new';
+          if(window.location.pathname!==wanted)router.replace(wanted,{scroll:false});
+        }
+        return;
       }
-    });
+
+      if(hadEditor.current){
+        hadEditor.current=false;
+        const path=window.location.pathname;
+        if(path.startsWith('/menu-items/'))router.replace('/menu-items',{scroll:false});
+        else if(path.startsWith('/bulk-recipes/'))router.replace('/bulk-recipes',{scroll:false});
+      }
+    };
+
+    syncEditorRoute();
+    const observer=new MutationObserver(syncEditorRoute);
     observer.observe(document.body,{childList:true,subtree:true});
     return()=>observer.disconnect();
-  },[]);
+  },[router]);
 
   return null;
 }
