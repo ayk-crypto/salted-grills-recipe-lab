@@ -14,7 +14,34 @@ export async function PATCH(req,{params}){
 
 export async function DELETE(req,{params}){
   const {id}=await params,sql=db();
-  try{const rows=await sql`UPDATE recipes SET is_active=false, updated_at=now() WHERE id=${id} AND is_active=true RETURNING id,name`;if(!rows.length)return NextResponse.json({error:"Recipe not found"},{status:404});return NextResponse.json({ok:true,recipe:rows[0]});}
+  try{
+    const [recipe]=await sql`SELECT id,name,recipe_type FROM recipes WHERE id=${id} AND is_active=true`;
+    if(!recipe)return NextResponse.json({error:"Item not found"},{status:404});
+
+    if(recipe.recipe_type==="bulk"){
+      const usage=await sql`
+        SELECT DISTINCT r.id,r.name,r.recipe_type
+        FROM recipes r
+        JOIN recipe_versions rv ON rv.id=r.current_version_id
+        JOIN recipe_components rc ON rc.recipe_version_id=rv.id
+        WHERE r.is_active=true AND rc.bulk_recipe_id=${id}
+        ORDER BY r.name
+      `;
+      if(usage.length){
+        return NextResponse.json({
+          error:`${recipe.name} is still used in ${usage.length} active item${usage.length===1?'':'s'}. Remove it from those items first.`,
+          used_in:usage
+        },{status:409});
+      }
+    }
+
+    const [deleted]=await sql`
+      UPDATE recipes SET is_active=false, updated_at=now()
+      WHERE id=${id} AND is_active=true
+      RETURNING id,name,recipe_type
+    `;
+    return NextResponse.json({ok:true,item:deleted});
+  }
   catch(e){return NextResponse.json({error:e.message},{status:500});}
 }
 
