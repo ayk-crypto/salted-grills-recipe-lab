@@ -1,13 +1,32 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
+
+function viewSignature(){
+ const editor=document.querySelector('.cost-editor .editor-top h1')?.textContent?.trim();
+ if(editor)return `editor:${editor}`;
+ const page=document.querySelector('.page-head h1')?.textContent?.trim();
+ if(page)return `page:${page}`;
+ const active=document.querySelector('.side-nav button.active')?.textContent?.trim();
+ return `nav:${active||''}`;
+}
 
 export default function ActionDeleteExperience(){
  const [pending,setPending]=useState(null);
  const [menu,setMenu]=useState(null);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState("");
+ const signatureRef=useRef("");
 
  useEffect(()=>{
+  signatureRef.current=viewSignature();
+
+  const clearTransient=()=>{
+   setMenu(null);
+   setPending(null);
+   setError("");
+   setBusy(false);
+  };
+
   const onOpen=e=>{
    const detail=e.detail;
    if(!detail)return;
@@ -15,13 +34,44 @@ export default function ActionDeleteExperience(){
   };
   const onMenu=e=>{
    const detail=e.detail;if(!detail)return;
-   setMenu(detail);
+   setPending(null);setError("");setMenu(detail);
   };
-  const close=()=>setMenu(null);
+  const closeMenu=()=>setMenu(null);
+  const onPointerDown=e=>{
+   const target=e.target;
+   if(target?.closest?.('.sg-action-menu')||target?.closest?.('.delete-control'))return;
+   setMenu(null);
+  };
+  const onKeyDown=e=>{if(e.key==='Escape')clearTransient()};
+  const onNavClick=e=>{if(e.target?.closest?.('.side-nav button'))clearTransient()};
+
+  const observer=new MutationObserver(()=>{
+   const next=viewSignature();
+   if(next!==signatureRef.current){
+    signatureRef.current=next;
+    clearTransient();
+   }
+  });
+
   window.addEventListener('sg-open-delete',onOpen);
   window.addEventListener('sg-open-menu',onMenu);
-  window.addEventListener('resize',close);window.addEventListener('scroll',close,true);
-  return()=>{window.removeEventListener('sg-open-delete',onOpen);window.removeEventListener('sg-open-menu',onMenu);window.removeEventListener('resize',close);window.removeEventListener('scroll',close,true)};
+  window.addEventListener('resize',closeMenu);
+  window.addEventListener('scroll',closeMenu,true);
+  document.addEventListener('pointerdown',onPointerDown,true);
+  document.addEventListener('keydown',onKeyDown);
+  document.addEventListener('click',onNavClick,true);
+  observer.observe(document.body,{childList:true,subtree:true,characterData:true});
+
+  return()=>{
+   window.removeEventListener('sg-open-delete',onOpen);
+   window.removeEventListener('sg-open-menu',onMenu);
+   window.removeEventListener('resize',closeMenu);
+   window.removeEventListener('scroll',closeMenu,true);
+   document.removeEventListener('pointerdown',onPointerDown,true);
+   document.removeEventListener('keydown',onKeyDown);
+   document.removeEventListener('click',onNavClick,true);
+   observer.disconnect();
+  };
  },[]);
 
  async function confirmDelete(){
@@ -52,7 +102,7 @@ export default function ActionDeleteExperience(){
 
  return <>
   {menu&&<div className="sg-action-menu" style={{left:menu.left,top:menu.top}}>
-    <button onClick={()=>{setMenu(null);window.dispatchEvent(new CustomEvent('sg-open-delete',{detail:menu.config}))}}>Delete</button>
+    <button onClick={()=>{const config=menu.config;setMenu(null);window.dispatchEvent(new CustomEvent('sg-open-delete',{detail:config}))}}>Delete</button>
   </div>}
   {pending&&<div className="sg-dialog-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)setPending(null)}}>
     <div className="sg-dialog" role="dialog" aria-modal="true" aria-labelledby="sg-delete-title">
@@ -64,7 +114,7 @@ export default function ActionDeleteExperience(){
         {error&&<div className="sg-dialog-error">{error}</div>}
       </div>
       <div className="sg-dialog-actions">
-        <button className="sg-dialog-cancel" disabled={busy} onClick={()=>setPending(null)}>Cancel</button>
+        <button className="sg-dialog-cancel" disabled={busy} onClick={()=>{setPending(null);setError('')}}>Cancel</button>
         <button className="sg-dialog-delete" disabled={busy} onClick={confirmDelete}>{busy?'Deleting…':'Delete'}</button>
       </div>
     </div>
