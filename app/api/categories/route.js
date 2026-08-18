@@ -30,13 +30,22 @@ export async function DELETE(req) {
       [item] = await sql`SELECT id, name FROM categories WHERE name = ${String(body.name).trim()}`;
     }
     if (!item) return NextResponse.json({error:"Category not found"}, {status:404});
-    const [usage] = await sql`SELECT count(*)::int AS count FROM recipes WHERE category = ${item.name} AND is_active = true`;
-    if ((usage?.count || 0) > 0) {
-      await sql`UPDATE categories SET is_active = false, updated_at = now() WHERE id = ${item.id}`;
-      return NextResponse.json({ok:true, mode:"deactivated", message:"Category is used by recipes, so it was hidden from the active category list."});
+
+    const usage = await sql`
+      SELECT id,name,recipe_type
+      FROM recipes
+      WHERE category=${item.name} AND is_active=true
+      ORDER BY name
+    `;
+    if (usage.length) {
+      return NextResponse.json({
+        error:`${item.name} is assigned to ${usage.length} active menu item${usage.length===1?'':'s'}. Move those items to another category first.`,
+        used_in:usage
+      }, {status:409});
     }
+
     await sql`DELETE FROM categories WHERE id = ${item.id}`;
-    return NextResponse.json({ok:true, mode:"deleted"});
+    return NextResponse.json({ok:true, mode:"deleted", item});
   } catch (e) {
     return NextResponse.json({error:e.message}, {status:500});
   }

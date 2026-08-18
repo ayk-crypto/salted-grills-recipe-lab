@@ -29,14 +29,25 @@ export async function DELETE(req) {
       [item] = await sql`SELECT id, name FROM ingredients WHERE name = ${String(body.name).trim()}`;
     }
     if (!item) return NextResponse.json({error:"Ingredient not found"}, {status:404});
-    const [usage] = await sql`SELECT count(*)::int AS count FROM recipe_components WHERE ingredient_id = ${item.id}`;
-    if ((usage?.count || 0) > 0) {
-      await sql`UPDATE ingredients SET is_active = false, updated_at = now() WHERE id = ${item.id}`;
-      return NextResponse.json({ok:true, mode:"deactivated", message:"Ingredient is used in a recipe, so it was hidden from the active ingredient list."});
+
+    const usage = await sql`
+      SELECT DISTINCT r.id,r.name,r.recipe_type
+      FROM recipes r
+      JOIN recipe_versions rv ON rv.id=r.current_version_id
+      JOIN recipe_components rc ON rc.recipe_version_id=rv.id
+      WHERE r.is_active=true AND rc.ingredient_id=${item.id}
+      ORDER BY r.name
+    `;
+    if (usage.length) {
+      return NextResponse.json({
+        error:`${item.name} is still used in ${usage.length} active item${usage.length===1?'':'s'}. Remove it from those items first.`,
+        used_in:usage
+      }, {status:409});
     }
+
     await sql`DELETE FROM ingredient_prices WHERE ingredient_id = ${item.id}`;
     await sql`DELETE FROM ingredients WHERE id = ${item.id}`;
-    return NextResponse.json({ok:true, mode:"deleted"});
+    return NextResponse.json({ok:true, mode:"deleted", item});
   } catch (e) {
     return NextResponse.json({error:e.message}, {status:500});
   }
