@@ -2,6 +2,7 @@ import "./globals.css";
 import "./costing-first.css";
 import "./delete-controls.css";
 import "./premium-ui.css";
+import "./editor-v2.css";
 import "./price-import.css";
 import "./ingredients-revamp.css";
 import "./categories-revamp.css";
