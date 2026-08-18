@@ -88,7 +88,8 @@ export default function ActionDeleteExperience(){
     setError(names.length?`${j.error} Used in: ${names.join(', ')}`:(j.error||'This item cannot be deleted yet.'));
     setBusy(false);return;
    }
-   window.location.reload();
+   const parent=type==='menu'?'/menu-items':type==='bulk'?'/bulk-recipes':type==='ingredient'?'/ingredients':'/categories';
+   window.location.assign(parent);
   }catch{setError('Could not delete this item. Please try again.');setBusy(false)}
  }
 
