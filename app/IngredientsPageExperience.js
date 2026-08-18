@@ -46,19 +46,33 @@ export default function IngredientsPageExperience(){
 
   function enhanceCards(){
    document.querySelectorAll('.ingredient.linked').forEach(card=>{
-    card.classList.add('ingredient-premium-card');
-    const p=card.querySelector('p');
-    const priceLine=p?.querySelector('span');
-    if(priceLine){
-      const missing=/missing/i.test(priceLine.textContent||'');
-      priceLine.classList.toggle('ingredient-price-missing',missing);
-      priceLine.classList.toggle('ingredient-price-set',!missing);
-      if(missing&&!priceLine.textContent?.trim().startsWith('•'))priceLine.textContent=`• ${priceLine.textContent.trim()}`;
+    if(!card.dataset.ingredientPremium){
+      card.dataset.ingredientPremium='1';
+      card.classList.add('ingredient-premium-card');
+      const p=card.querySelector('p');
+      const priceLine=p?.querySelector('span');
+      if(priceLine){
+        const missing=/missing/i.test(priceLine.textContent||'');
+        priceLine.classList.toggle('ingredient-price-missing',missing);
+        priceLine.classList.toggle('ingredient-price-set',!missing);
+        if(missing&&!priceLine.textContent?.trim().startsWith('•'))priceLine.textContent=`• ${priceLine.textContent.trim()}`;
+      }
+      const priceBtn=card.querySelector('button');
+      if(priceBtn){
+        priceBtn.classList.add('ingredient-price-action');
+        const nextLabel=/update/i.test(priceBtn.textContent||'')?'Update Price':'Add Price';
+        if(priceBtn.textContent!==nextLabel)priceBtn.textContent=nextLabel;
+      }
     }
-    const priceBtn=card.querySelector('button');
-    if(priceBtn){priceBtn.classList.add('ingredient-price-action');priceBtn.textContent=/update/i.test(priceBtn.textContent||'')?'Update Price':'Add Price'}
+
     const del=card.querySelector('.delete-control');
-    if(del){del.classList.add('ingredient-overflow-action');del.textContent='⋮';del.setAttribute('aria-label','Delete ingredient');del.title='Delete ingredient'}
+    if(del&&!del.dataset.ingredientOverflow){
+      del.dataset.ingredientOverflow='1';
+      del.classList.add('ingredient-overflow-action');
+      if(del.textContent!=='⋮')del.textContent='⋮';
+      del.setAttribute('aria-label','Delete ingredient');
+      del.title='Delete ingredient';
+    }
    });
   }
 
@@ -70,8 +84,8 @@ export default function IngredientsPageExperience(){
    if(!active)return;
    ensureControlLayout(head);ensureSummary(head);enhanceCards();
    const search=document.querySelector('.page-head + .ingredient-kpi-strip + .search, .ingredient-kpi-strip + .search, .search');
-   if(search&&search.querySelector('input')?.placeholder?.toLowerCase().includes('ingredient'))search.classList.add('ingredient-search-premium');
-   const importActions=head.querySelector('.price-import-actions');if(importActions)importActions.classList.add('ingredient-toolbar-actions');
+   if(search&&search.querySelector('input')?.placeholder?.toLowerCase().includes('ingredient')&&!search.classList.contains('ingredient-search-premium'))search.classList.add('ingredient-search-premium');
+   const importActions=head.querySelector('.price-import-actions');if(importActions&&!importActions.classList.contains('ingredient-toolbar-actions'))importActions.classList.add('ingredient-toolbar-actions');
   }
 
   load();
