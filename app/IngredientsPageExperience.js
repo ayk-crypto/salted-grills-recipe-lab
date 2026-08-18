@@ -17,6 +17,12 @@ export default function IngredientsPageExperience(){
    enhance();
   }
 
+  function cleanupInactive(){
+   document.body.classList.remove('ingredients-revamped');
+   document.querySelectorAll('.ingredient-kpi-strip').forEach(el=>el.remove());
+   document.querySelectorAll('.ingredient-search-premium').forEach(el=>el.classList.remove('ingredient-search-premium'));
+  }
+
   function stat(icon,label,value,sub,tone=''){
    const el=document.createElement('div');el.className=`ingredient-stat ${tone}`;
    el.innerHTML=`<div class="ingredient-stat-icon">${icon}</div><div><span>${label}</span><b>${value}</b><small>${sub}</small></div>`;
@@ -70,8 +76,8 @@ export default function IngredientsPageExperience(){
       del.dataset.ingredientOverflow='1';
       del.classList.add('ingredient-overflow-action');
       if(del.textContent!=='⋮')del.textContent='⋮';
-      del.setAttribute('aria-label','Delete ingredient');
-      del.title='Delete ingredient';
+      del.setAttribute('aria-label','Ingredient actions');
+      del.title='Ingredient actions';
     }
    });
   }
@@ -80,17 +86,17 @@ export default function IngredientsPageExperience(){
    if(stopped)return;
    const head=[...document.querySelectorAll('.page-head')].find(h=>h.querySelector('h1')?.textContent?.trim()==='Ingredients');
    const active=!!head;
-   document.body.classList.toggle('ingredients-revamped',active);
-   if(!active)return;
+   if(!active){cleanupInactive();return}
+   document.body.classList.add('ingredients-revamped');
    ensureControlLayout(head);ensureSummary(head);enhanceCards();
-   const search=document.querySelector('.page-head + .ingredient-kpi-strip + .search, .ingredient-kpi-strip + .search, .search');
-   if(search&&search.querySelector('input')?.placeholder?.toLowerCase().includes('ingredient')&&!search.classList.contains('ingredient-search-premium'))search.classList.add('ingredient-search-premium');
+   const search=[...document.querySelectorAll('.search')].find(el=>el.querySelector('input')?.placeholder?.toLowerCase().includes('ingredient'));
+   if(search&&!search.classList.contains('ingredient-search-premium'))search.classList.add('ingredient-search-premium');
    const importActions=head.querySelector('.price-import-actions');if(importActions&&!importActions.classList.contains('ingredient-toolbar-actions'))importActions.classList.add('ingredient-toolbar-actions');
   }
 
   load();
   observer=new MutationObserver(enhance);observer.observe(document.body,{childList:true,subtree:true});
-  return()=>{stopped=true;observer?.disconnect();document.body.classList.remove('ingredients-revamped')};
+  return()=>{stopped=true;observer?.disconnect();cleanupInactive()};
  },[]);
  return null;
 }
