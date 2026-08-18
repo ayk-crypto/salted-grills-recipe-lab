@@ -29,7 +29,22 @@ export async function GET() {
     const recipes = await sql`
       SELECT r.*, rv.version_no, rv.status, rv.yield_quantity, rv.yield_unit,
              rv.prep_time_minutes, rv.cook_time_minutes,
-             (SELECT count(*)::int FROM recipe_components rc WHERE rc.recipe_version_id = rv.id) AS component_count
+             (SELECT count(*)::int FROM recipe_components rc WHERE rc.recipe_version_id = rv.id) AS component_count,
+             COALESCE((
+               SELECT json_agg(json_build_object(
+                 'ingredient_id', rc.ingredient_id,
+                 'bulk_recipe_id', rc.bulk_recipe_id,
+                 'ingredient_name', i.name,
+                 'bulk_recipe_name', br.name,
+                 'quantity', rc.quantity,
+                 'unit', rc.unit,
+                 'notes', rc.notes
+               ) ORDER BY rc.sort_order, rc.id)
+               FROM recipe_components rc
+               LEFT JOIN ingredients i ON i.id = rc.ingredient_id
+               LEFT JOIN recipes br ON br.id = rc.bulk_recipe_id
+               WHERE rc.recipe_version_id = rv.id
+             ), '[]'::json) AS components_summary
       FROM recipes r
       LEFT JOIN recipe_versions rv ON rv.id = r.current_version_id
       WHERE r.is_active = true
