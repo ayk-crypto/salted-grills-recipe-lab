@@ -71,6 +71,16 @@ export default function DeleteControls(){
     card.dataset.deleteReady='1';card.classList.add('has-delete-control');card.appendChild(makeDeleteButton({type:'category',id:matches[0].id,name}));
    });
 
+   document.querySelectorAll('.simple-modal.wide').forEach(modal=>{
+    if(modal.dataset.deleteReady)return;
+    const name=modal.querySelector('header h2')?.textContent?.trim();
+    const matches=(data.ingredients||[]).filter(i=>i.name===name);
+    if(!name||matches.length!==1)return;
+    modal.dataset.deleteReady='1';
+    const slot=document.createElement('div');slot.className='modal-delete-slot';slot.appendChild(makeDeleteButton({type:'ingredient',id:matches[0].id,name}));
+    modal.appendChild(slot);
+   });
+
    const editor=document.querySelector('.cost-editor .editor-top');
    if(editor&&!editor.dataset.deleteReady){
     const heading=editor.querySelector('h1')?.textContent||'';
