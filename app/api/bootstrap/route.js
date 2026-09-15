@@ -11,13 +11,15 @@ export async function GET() {
       SELECT i.*,
         (SELECT json_build_object(
           'id', ip.id,'purchase_quantity', ip.purchase_quantity,'purchase_unit', ip.purchase_unit,
-          'purchase_price', ip.purchase_price,'price_date', ip.price_date,'supplier', ip.supplier,'source',ip.source
+          'purchase_price', ip.purchase_price,'price_date', ip.price_date,'supplier', ip.supplier,'source',ip.source,
+          'source_metadata', ip.source_metadata
         ) FROM ingredient_prices ip
         WHERE ip.ingredient_id = i.id AND ip.tenant_id=${tid}
         ORDER BY ip.price_date DESC, ip.created_at DESC LIMIT 1) AS latest_price,
         (SELECT json_build_object(
           'purchase_quantity', ip.purchase_quantity,'purchase_unit', ip.purchase_unit,
-          'purchase_price', ip.purchase_price,'price_date', ip.price_date,'supplier', ip.supplier,'source',ip.source
+          'purchase_price', ip.purchase_price,'price_date', ip.price_date,'supplier', ip.supplier,'source',ip.source,
+          'source_metadata', ip.source_metadata
         ) FROM ingredient_prices ip
         WHERE ip.ingredient_id = i.id AND ip.tenant_id=${tid}
         ORDER BY ip.price_date DESC, ip.created_at DESC OFFSET 1 LIMIT 1) AS previous_price
@@ -45,7 +47,7 @@ export async function GET() {
       ORDER BY r.updated_at DESC, r.name
     `;
     const prices = await sql`
-      SELECT ip.id,ip.ingredient_id,ip.purchase_quantity,ip.purchase_unit,ip.purchase_price,ip.price_date,ip.supplier,ip.source,i.name AS ingredient_name
+      SELECT ip.id,ip.ingredient_id,ip.purchase_quantity,ip.purchase_unit,ip.purchase_price,ip.price_date,ip.supplier,ip.source,ip.source_metadata,i.name AS ingredient_name
       FROM ingredient_prices ip JOIN ingredients i ON i.id=ip.ingredient_id AND i.tenant_id=${tid}
       WHERE i.is_active=true AND ip.tenant_id=${tid}
       ORDER BY ip.price_date DESC,ip.created_at DESC LIMIT 1000
