@@ -26,16 +26,24 @@ export async function resolveIngredientCosts(tenantId,asOf){
   for(const i of ingredients){
     if(i.source_type==='shelfsense'&&i.external_item_id){
       const c=shelfById.get(String(i.external_item_id));
+      const factor=Number(i.conversion_factor||1);
+      const remoteBaseCost=c?.unitCost==null?null:Number(c.unitCost);
+      // conversion_factor means ShelfSense base units consumed by one Cost Control kitchen unit.
+      // For g->g, ml->ml and pc->pc this stays 1. For a kitchen "portion" made from
+      // 30 source grams, for example, the factor is 30 and the portion cost is 30x the g cost.
+      const kitchenUnitCost=remoteBaseCost==null?null:remoteBaseCost*factor;
       results.push({
         ingredientId:i.id,ingredientName:i.name,source:'shelfsense',asOf:date,
         available:!!c,externalItemId:i.external_item_id,
         purchaseUnit:c?.purchaseUnit||c?.enteredUnit||c?.baseUnit||null,
         purchaseQuantity:c?.enteredQuantity||c?.receivedQuantity||null,
-        purchasePrice:c?.unitCost!=null&&c?.receivedQuantity!=null?Number(c.unitCost)*Number(c.receivedQuantity):null,
-        baseUnit:c?.baseUnit||i.kitchen_unit||i.default_unit,
-        baseUnitCost:c?.unitCost??null,
+        purchasePrice:c?.unitCost!=null&&c?.storedBaseQuantity!=null?Number(c.unitCost)*Number(c.storedBaseQuantity):null,
+        baseUnit:i.kitchen_unit||c?.baseUnit||i.default_unit,
+        baseUnitCost:kitchenUnitCost,
+        sourceBaseUnit:c?.baseUnit||null,
+        conversionFactor:factor,
         effectiveDate:c?.effectiveDate||null,supplier:c?.supplier||null,
-        sourceExternalId:c?.purchaseItemId||null,
+        sourceExternalId:c?.sourceBatchId||c?.purchaseItemId||null,
       });
       continue;
     }
