@@ -21,19 +21,19 @@ function fmtDate(v){if(!v)return'';const d=new Date(v);return Number.isNaN(d.get
 
 export default function CostingConversionUX(){
   const path=usePathname()||'';
-  const [host,setHost]=useState(null),[ingredientName,setIngredientName]=useState(''),[purchaseUnit,setPurchaseUnit]=useState('');
+  const [host,setHost]=useState(null),[ingredientName,setIngredientName]=useState(''),[purchaseUnit,setPurchaseUnit]=useState(''),[unitTouched,setUnitTouched]=useState(false);
   const [bootstrap,setBootstrap]=useState(null),[usable,setUsable]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
 
   useEffect(()=>{
     if(!path.startsWith('/ingredients')){setHost(null);return}
     let stopped=false,observer=null,form=null,select=null,localHost=null;
-    const onUnit=()=>{if(select)setPurchaseUnit(select.value)};
+    const onUnit=()=>{if(select){setPurchaseUnit(select.value);setUnitTouched(true)}};
     const scan=()=>{
       if(stopped)return;
       const modal=document.querySelector('.v2-modal'),title=modal?.querySelector('header h2')?.textContent||'';
       if(!modal||!title.startsWith('Record Price · ')){
         if(localHost?.isConnected)localHost.remove();
-        localHost=null;setHost(null);setIngredientName('');return;
+        localHost=null;setHost(null);setIngredientName('');setUnitTouched(false);return;
       }
       const name=title.replace('Record Price · ','').trim();
       form=modal.querySelector('form');select=form?.querySelector('select[name="purchase_unit"]');
@@ -44,6 +44,7 @@ export default function CostingConversionUX(){
       if(!localHost||!localHost.isConnected){
         localHost=document.createElement('div');localHost.className='costing-conversion-host';
         if(form)form.parentNode.insertBefore(localHost,form);
+        setUnitTouched(false);
       }
       setHost(localHost);setIngredientName(name);
       if(select)setPurchaseUnit(select.value);
@@ -62,9 +63,10 @@ export default function CostingConversionUX(){
   const ingredient=useMemo(()=>bootstrap?.ingredients?.find(i=>norm(i.name)===norm(ingredientName)),[bootstrap,ingredientName]);
   const latestPurchaseUnit=ingredient?.latest_price?.display_purchase_unit||ingredient?.latest_price?.source_purchase_unit||'';
   const activePurchaseUnit=useMemo(()=>{
+    if(unitTouched&&purchaseUnit)return norm(purchaseUnit);
     if(latestPurchaseUnit&&!direct(latestPurchaseUnit,ingredient?.default_unit))return norm(latestPurchaseUnit);
     return norm(purchaseUnit||latestPurchaseUnit||ingredient?.default_unit);
-  },[purchaseUnit,latestPurchaseUnit,ingredient]);
+  },[purchaseUnit,latestPurchaseUnit,ingredient,unitTouched]);
   const conversion=useMemo(()=>ingredient?.costing_conversions?.find(c=>norm(c.purchase_unit)===activePurchaseUnit),[ingredient,activePurchaseUnit]);
   const needsYield=ingredient&&activePurchaseUnit&&!direct(activePurchaseUnit,ingredient.default_unit);
   useEffect(()=>{setUsable(conversion?.usable_quantity?String(conversion.usable_quantity):'');setMessage('')},[conversion?.id,activePurchaseUnit]);
