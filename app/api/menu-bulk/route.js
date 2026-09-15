@@ -22,14 +22,15 @@ export async function PATCH(req){
     if(hasCategory&&category){
       await sql`INSERT INTO categories(name) VALUES(${category}) ON CONFLICT(name) DO UPDATE SET is_active=true,updated_at=now()`;
     }
-    const rows=await sql`
-      SELECT r.id,r.current_version_id,rv.kitchen_notes
-      FROM recipes r
-      LEFT JOIN recipe_versions rv ON rv.id=r.current_version_id
-      WHERE r.id=ANY(${ids}) AND r.recipe_type='menu' AND r.is_active=true
-    `;
-    if(!rows.length)return NextResponse.json({error:"No active menu items found"},{status:404});
-    for(const row of rows){
+    let updated=0;
+    for(const id of ids){
+      const [row]=await sql`
+        SELECT r.id,r.current_version_id,rv.kitchen_notes
+        FROM recipes r
+        LEFT JOIN recipe_versions rv ON rv.id=r.current_version_id
+        WHERE r.id=${id} AND r.recipe_type='menu' AND r.is_active=true
+      `;
+      if(!row)continue;
       if(hasCategory)await sql`UPDATE recipes SET category=${category||null},updated_at=now() WHERE id=${row.id}`;
       if(row.current_version_id&&(hasSelling||hasTarget)){
         const meta=parseMeta(row.kitchen_notes);
@@ -38,8 +39,10 @@ export async function PATCH(req){
         await sql`UPDATE recipe_versions SET kitchen_notes=${JSON.stringify(meta)} WHERE id=${row.current_version_id}`;
         await sql`UPDATE recipes SET updated_at=now() WHERE id=${row.id}`;
       }
+      updated++;
     }
-    return NextResponse.json({ok:true,updated:rows.length});
+    if(!updated)return NextResponse.json({error:"No active menu items found"},{status:404});
+    return NextResponse.json({ok:true,updated});
   }catch(e){return NextResponse.json({error:e.message},{status:500})}
 }
 
@@ -49,11 +52,15 @@ export async function DELETE(req){
     const ids=cleanIds(body.ids);
     if(!ids.length)return NextResponse.json({error:"Select at least one menu item"},{status:400});
     const sql=db();
-    const rows=await sql`
-      UPDATE recipes SET is_active=false,updated_at=now()
-      WHERE id=ANY(${ids}) AND recipe_type='menu' AND is_active=true
-      RETURNING id,name
-    `;
-    return NextResponse.json({ok:true,deleted:rows.length,items:rows});
+    const items=[];
+    for(const id of ids){
+      const [row]=await sql`
+        UPDATE recipes SET is_active=false,updated_at=now()
+        WHERE id=${id} AND recipe_type='menu' AND is_active=true
+        RETURNING id,name
+      `;
+      if(row)items.push(row);
+    }
+    return NextResponse.json({ok:true,deleted:items.length,items});
   }catch(e){return NextResponse.json({error:e.message},{status:500})}
 }
