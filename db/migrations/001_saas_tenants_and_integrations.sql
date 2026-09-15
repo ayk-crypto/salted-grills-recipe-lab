@@ -21,15 +21,10 @@ ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source TEXT NOT
 ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source_external_id TEXT;
 ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
-DO $$
-DECLARE default_tenant UUID;
-BEGIN
-  SELECT id INTO default_tenant FROM tenants WHERE slug='salted-grills' LIMIT 1;
-  UPDATE ingredients SET tenant_id=default_tenant WHERE tenant_id IS NULL;
-  UPDATE categories SET tenant_id=default_tenant WHERE tenant_id IS NULL;
-  UPDATE recipes SET tenant_id=default_tenant WHERE tenant_id IS NULL;
-  UPDATE ingredient_prices SET tenant_id=default_tenant WHERE tenant_id IS NULL;
-END $$;
+UPDATE ingredients SET tenant_id=(SELECT id FROM tenants WHERE slug='salted-grills' LIMIT 1) WHERE tenant_id IS NULL;
+UPDATE categories SET tenant_id=(SELECT id FROM tenants WHERE slug='salted-grills' LIMIT 1) WHERE tenant_id IS NULL;
+UPDATE recipes SET tenant_id=(SELECT id FROM tenants WHERE slug='salted-grills' LIMIT 1) WHERE tenant_id IS NULL;
+UPDATE ingredient_prices SET tenant_id=(SELECT id FROM tenants WHERE slug='salted-grills' LIMIT 1) WHERE tenant_id IS NULL;
 
 ALTER TABLE ingredients ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE categories ALTER COLUMN tenant_id SET NOT NULL;
