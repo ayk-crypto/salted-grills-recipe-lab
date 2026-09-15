@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS costing_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   snapshot_date DATE NOT NULL,
-  label TEXT,
+  label TEXT NOT NULL DEFAULT 'default',
   status TEXT NOT NULL DEFAULT 'finalized',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id,snapshot_date,label)
