@@ -32,27 +32,32 @@ export default function IngredientPurchaseDisplay(){
         if(!cells||cells.length<4)return;
         const name=norm(cells[0]?.querySelector('b')?.textContent||cells[0]?.textContent);
         const p=prices.get(name);
-        if(!p||p.source!=='shelfsense')return;
+        if(!p)return;
         const m=meta(p.source_metadata);
-        const purchaseQty=Number(m.sourceEnteredQty);
-        const purchaseUnit=m.sourceEnteredUnit||m.sourcePurchaseUnit;
-        const receiptTotal=Number(m.sourceReceiptTotal);
-        if(!(Number.isFinite(purchaseQty)&&purchaseQty>0&&purchaseUnit&&Number.isFinite(receiptTotal)&&receiptTotal>=0))return;
-        const cell=cells[2];
-        const value=`${money(receiptTotal)} / ${qty(purchaseQty)} ${purchaseUnit}`;
-        const date=dateLabel(m.effectiveDate||p.price_date);
-        if(cell.dataset.purchaseDisplay===value)return;
-        cell.dataset.purchaseDisplay=value;
-        cell.innerHTML='';
-        const strong=document.createElement('span');
-        strong.textContent=value;
-        strong.className='source-purchase-value';
-        cell.appendChild(strong);
-        const small=document.createElement('small');
-        small.textContent=date?`ShelfSense receipt · ${date}`:'ShelfSense receipt';
-        small.className='source-purchase-meta';
-        cell.appendChild(small);
-        cell.title='Original ShelfSense purchase/receipt price. Unit Cost is the normalized kitchen cost used in recipes.';
+        const purchaseQty=Number(p.display_purchase_quantity ?? m.sourceEnteredQty ?? p.purchase_quantity);
+        const purchaseUnit=p.display_purchase_unit||m.sourceEnteredUnit||m.sourcePurchaseUnit||p.purchase_unit;
+        const purchasePrice=Number(p.display_purchase_price ?? m.sourceReceiptTotal ?? p.purchase_price);
+        if(Number.isFinite(purchaseQty)&&purchaseQty>0&&purchaseUnit&&Number.isFinite(purchasePrice)){
+          const cell=cells[2];
+          const value=`${money(purchasePrice)} / ${qty(purchaseQty)} ${purchaseUnit}`;
+          const date=dateLabel(m.effectiveDate||p.price_date);
+          if(cell.dataset.purchaseDisplay!==value){
+            cell.dataset.purchaseDisplay=value;
+            cell.innerHTML='';
+            const strong=document.createElement('span');strong.textContent=value;strong.className='source-purchase-value';cell.appendChild(strong);
+            const small=document.createElement('small');
+            small.textContent=p.source==='shelfsense'?(date?`ShelfSense receipt · ${date}`:'ShelfSense receipt'):(date?`Purchase · ${date}`:'Purchase price');
+            small.className='source-purchase-meta';cell.appendChild(small);
+            cell.title='Original purchase price. Unit Cost is the kitchen costing rate used in recipes.';
+          }
+        }
+        const costCell=cells[3];
+        if(p.costing_status==='needs_yield'){
+          costCell.innerHTML='';
+          const badge=document.createElement('em');badge.className='costing-needs-yield';badge.textContent='Needs yield';costCell.appendChild(badge);
+          const small=document.createElement('small');small.className='source-purchase-meta';small.textContent=`Set usable ${p.costing_unit||'kitchen'} per ${p.source_purchase_unit||purchaseUnit}`;costCell.appendChild(small);
+          costCell.title='This purchase unit cannot be converted to a kitchen unit until usable yield is set.';
+        }
       });
     };
 

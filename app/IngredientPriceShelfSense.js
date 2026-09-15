@@ -12,12 +12,12 @@ function unitInfo(unit){
   if(['g','gm','gram','grams'].includes(u))return['weight',1];
   if(['l','ltr','liter','litre'].includes(u))return['volume',1000];
   if(u==='ml')return['volume',1];
-  if(['pc','pcs','piece','pieces','portion','portions','each'].includes(u))return['count',1];
+  if(['pc','pcs','piece','pieces','each'].includes(u))return['count',1];
   return[u||'other',1];
 }
 function conversionFactor(fromUnit,toUnit){
   const from=unitInfo(fromUnit),to=unitInfo(toUnit);
-  if(from[0]!==to[0])return null;
+  if(from[0]!==to[0]||!['weight','volume','count'].includes(from[0]))return null;
   return to[1]/from[1];
 }
 
@@ -81,8 +81,8 @@ export default function IngredientPriceShelfSense(){
       const res=await fetch('/api/integrations/shelfsense/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selectedSourceIds:[String(r.sourceExternalId)],acceptedSourceIds:[String(r.sourceExternalId)]})});
       const j=await res.json();
       if(!res.ok)throw new Error(j.error||'Sync failed');
-      if(j.blockedConversions)throw new Error('ShelfSense conversion needs review before this price can be synced.');
-      setMessage(j.imported?`Synced ${j.imported} ShelfSense price.`:'ShelfSense price is already up to date.');
+      if(j.blockedConversions)throw new Error('ShelfSense receipt conversion needs review before this purchase can be synced.');
+      setMessage(j.imported?`Synced ${j.imported} ShelfSense purchase price.`:'ShelfSense purchase is already up to date.');
       setTimeout(()=>window.location.reload(),650);
     }catch(e){setMessage(e.message||'Sync failed');setBusy(false)}
   }
@@ -96,7 +96,7 @@ export default function IngredientPriceShelfSense(){
       const pRes=await fetch('/api/integrations/shelfsense/sync',{cache:'no-store'});const p=await pRes.json();
       const next=p.rows?.find(r=>String(r.ingredientId)===String(ingredient.id));
       if(!next)throw new Error('ShelfSense mapping saved, but no purchase cost is available yet.');
-      if(next.conversionWarning)throw new Error(`Mapped, but conversion needs review: ${(next.conversionReasons||[]).join(', ')||'unit conversion is inconsistent'}.`);
+      if(next.conversionWarning)throw new Error(`Mapped, but ShelfSense receipt conversion needs review: ${(next.conversionReasons||[]).join(', ')||'unit conversion is inconsistent'}.`);
       await syncRow(next);
     }catch(e){setMessage(e.message||'Could not sync ShelfSense price');setBusy(false)}
   }
@@ -106,21 +106,22 @@ export default function IngredientPriceShelfSense(){
   if(state.loading)body=<div className="ipss-loading">Checking ShelfSense…</div>;
   else if(state.error||!state.integration?.connected)body=<div className="ipss-note">ShelfSense is not available for this ingredient right now.</div>;
   else if(row){
-    const status=row.conversionWarning?'Check conversion':row.status==='new'?(row.alert?'Price review required':'New price available'):row.status==='unchanged'?'Up to date':'No ShelfSense cost';
+    const status=row.conversionWarning?'Check ShelfSense receipt':row.needsYieldSetup?'Usable yield needed':row.status==='new'?(row.alert?'Price review required':'New purchase available'):row.status==='unchanged'?'Up to date':'No ShelfSense cost';
     body=<div className="ipss-card">
-      <div className="ipss-top"><div><span>SHELFSENSE</span><b>{status}</b><small>Receipt date: {receiptDate(row.priceDate)}</small></div>{row.status==='new'&&!row.conversionWarning&&<button type="button" className="ipss-sync" disabled={busy} onClick={()=>syncRow(row)}>{busy?'Syncing…':'Sync Price'}</button>}</div>
+      <div className="ipss-top"><div><span>SHELFSENSE</span><b>{status}</b><small>Receipt date: {receiptDate(row.priceDate)}</small></div>{row.status==='new'&&!row.conversionWarning&&<button type="button" className="ipss-sync" disabled={busy} onClick={()=>syncRow(row)}>{busy?'Syncing…':row.needsYieldSetup?'Sync Purchase':'Sync Price'}</button>}</div>
       <div className="ipss-grid">
-        <div><small>Purchase / Receipt</small><strong>{row.sourceEnteredQty!=null?`${row.sourceEnteredQty} ${row.sourceEnteredUnit||row.sourcePurchaseUnit||''}`:(row.sourcePurchaseUnit||'—')}</strong><em>{row.sourcePurchaseFactor&&row.sourcePurchaseUnit!==row.sourceBaseUnit?`1 ${row.sourcePurchaseUnit} = ${row.sourcePurchaseFactor} ${row.sourceBaseUnit}`:'Source receipt unit'}</em>{row.sourceReceiptTotal!=null&&<em>Receipt value ≈ {money(row.sourceReceiptTotal)} · {receiptDate(row.priceDate)}</em>}</div>
+        <div><small>Purchase / Receipt</small><strong>{row.purchaseQuantity!=null?`${row.purchaseQuantity} ${row.purchaseUnit||''}`:'—'}</strong><em>{row.purchasePrice!=null?`${money(row.purchasePrice)} total`:'Source receipt'}</em>{row.sourceReceiptTotal!=null&&<em>Receipt value ≈ {money(row.sourceReceiptTotal)} · {receiptDate(row.priceDate)}</em>}</div>
         <div><small>Issue Unit</small><strong>{row.sourceIssueUnit||'—'}</strong><em>Kitchen issue</em></div>
-        <div><small>Costing Unit</small><strong>{money(row.purchasePrice)} / {row.purchaseUnit||ingredient?.default_unit||'—'}</strong><em>From receipt dated {receiptDate(row.priceDate)}</em></div>
+        <div><small>Kitchen Cost</small><strong>{row.costingRate!=null?`${money(row.costingRate)} / ${row.costingUnit||ingredient?.default_unit||'—'}`:'Yield required'}</strong><em>{row.yieldUsableQuantity?`1 ${row.purchaseUnit} = ${row.yieldUsableQuantity} ${row.yieldCostingUnit} usable`:`Used in ${ingredient?.default_unit||'kitchen unit'}`}</em></div>
       </div>
-      {row.conversionWarning&&<div className="ipss-warning">⚠ {(row.conversionReasons||[]).join(' · ')||'ShelfSense unit conversion needs review.'} Use the manual form below until corrected.</div>}
-      {row.alert&&row.status==='new'&&!row.conversionWarning&&<div className="ipss-warning">Price changed {Number(row.changePct).toFixed(1)}% from the current Cost Control price. Review before syncing.</div>}
+      {row.needsYieldSetup&&!row.conversionWarning&&<div className="ipss-warning">Set the usable yield below (for example, 1 can = 720 g usable). Until then this purchase can be stored, but it will not be used as a per-gram/menu cost.</div>}
+      {row.conversionWarning&&<div className="ipss-warning">⚠ {(row.conversionReasons||[]).join(' · ')||'ShelfSense receipt conversion needs review.'} You can keep this item manual until corrected.</div>}
+      {row.alert&&row.status==='new'&&!row.conversionWarning&&<div className="ipss-warning">Kitchen cost changed {Number(row.changePct).toFixed(1)}% from the current Cost Control rate. Review before syncing.</div>}
     </div>;
   }else if(!mapping&&exactItem&&quickFactor){
-    body=<div className="ipss-card"><div className="ipss-top"><div><span>SHELFSENSE</span><b>Exact item found</b><small>{exactItem.name} · buy {exactItem.purchaseUnit||exactItem.unit||'—'} · issue {exactItem.issueUnit||exactItem.unit||'—'}</small></div><button type="button" className="ipss-sync" disabled={busy} onClick={mapAndSync}>{busy?'Working…':'Map & Sync'}</button></div><div className="ipss-note">This ingredient is not mapped yet. The exact ShelfSense name matches, so you can map it here and pull its latest price.</div></div>;
+    body=<div className="ipss-card"><div className="ipss-top"><div><span>SHELFSENSE</span><b>Exact item found</b><small>{exactItem.name} · buy {exactItem.purchaseUnit||exactItem.unit||'—'} · issue {exactItem.issueUnit||exactItem.unit||'—'}</small></div><button type="button" className="ipss-sync" disabled={busy} onClick={mapAndSync}>{busy?'Working…':'Map & Sync'}</button></div><div className="ipss-note">This ingredient is not mapped yet. The exact ShelfSense name matches and the units convert directly.</div></div>;
   }else if(!mapping){
-    body=<div className="ipss-card"><div className="ipss-top"><div><span>SHELFSENSE</span><b>Not mapped</b></div></div><div className="ipss-note">No safe exact ShelfSense match was found. Keep this price manual or map the ingredient from Purchase Prices → ShelfSense.</div></div>;
+    body=<div className="ipss-card"><div className="ipss-top"><div><span>SHELFSENSE</span><b>Not mapped</b></div></div><div className="ipss-note">No safe direct ShelfSense match was found. Keep this price manual or map the ingredient from Purchase Prices → ShelfSense.</div></div>;
   }else body=<div className="ipss-note">No ShelfSense purchase cost is available for this mapped ingredient.</div>;
 
   return createPortal(<div className="ipss-wrap"><div className="ipss-divider"><span>Use ShelfSense or enter manually</span></div>{body}{message&&<div className={message.toLowerCase().includes('synced')?'ipss-success':'ipss-message'}>{message}</div>}<div className="ipss-manual-label">Manual price entry</div></div>,target);
