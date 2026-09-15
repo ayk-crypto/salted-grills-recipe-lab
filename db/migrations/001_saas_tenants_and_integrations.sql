@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS integrations (
 CREATE TABLE IF NOT EXISTS ingredient_source_mappings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  ingredient_id BIGINT NOT NULL,
+  ingredient_id UUID NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
   source_type TEXT NOT NULL DEFAULT 'manual',
   integration_id UUID REFERENCES integrations(id) ON DELETE SET NULL,
   external_item_id TEXT,
