@@ -3,7 +3,21 @@ import { db } from "../../../../db";
 import { requireTenant } from "../../../../tenant";
 import { fetchShelfSenseCosts, getShelfSenseIntegration } from "../../../../integrations/shelfsense";
 
+const ALERT_THRESHOLD_PCT=25;
 function day(v){return v?String(v).slice(0,10):new Date().toISOString().slice(0,10)}
+function unitInfo(unit){
+  const u=String(unit||'').trim().toLowerCase();
+  if(u==='kg')return['weight',1000];
+  if(['g','gm','gram','grams'].includes(u))return['weight',1];
+  if(['l','ltr','liter','litre'].includes(u))return['volume',1000];
+  if(u==='ml')return['volume',1];
+  if(['pc','pcs','piece','pieces','portion','portions','each'].includes(u))return['count',1];
+  return[u||'other',1];
+}
+function normalizedRate(qty,unit,price){
+  const info=unitInfo(unit),base=Number(qty||0)*info[1];
+  return base>0?Number(price)/base:NaN;
+}
 
 async function buildPreview(tenantId,asOf){
   const sql=db();
@@ -31,16 +45,37 @@ async function buildPreview(tenantId,asOf){
         AND source='shelfsense' AND source_external_id=${sourceId}
       LIMIT 1
     `:[];
+    const [latest]=await sql`
+      SELECT purchase_quantity,purchase_unit,purchase_price,price_date,source
+      FROM ingredient_prices
+      WHERE tenant_id=${tenantId} AND ingredient_id=${m.ingredient_id}
+      ORDER BY price_date DESC, created_at DESC
+      LIMIT 1
+    `;
+    const purchaseUnit=m.kitchen_unit||m.default_unit||c.baseUnit;
+    const incomingRate=normalizedRate(1,purchaseUnit,price);
+    const latestRate=latest?normalizedRate(latest.purchase_quantity,latest.purchase_unit,latest.purchase_price):NaN;
+    const compatible=latest&&unitInfo(latest.purchase_unit)[0]===unitInfo(purchaseUnit)[0];
+    const changePct=compatible&&Number.isFinite(latestRate)&&latestRate>0?((incomingRate-latestRate)/latestRate)*100:null;
+    const alert=Number.isFinite(changePct)&&Math.abs(changePct)>=ALERT_THRESHOLD_PCT;
     rows.push({
       ingredientId:m.ingredient_id,ingredientName:m.ingredient_name,
       status:exists.length?'unchanged':'new',externalItemId:m.external_item_id,
       externalItemName:c.itemName||m.external_item_name,
       priceDate:day(c.effectiveDate),purchaseQuantity:1,
-      purchaseUnit:m.kitchen_unit||m.default_unit||c.baseUnit,
+      purchaseUnit,
       purchasePrice:price,supplier:c.supplier?.name||c.supplierName||null,
       sourceExternalId:sourceId,sourceBaseUnit:c.baseUnit||null,
       sourceUnitCost:Number(c.unitCost),conversionFactor:factor,
       effectiveDate:c.effectiveDate||null,
+      previousPrice:latest?Number(latest.purchase_price):null,
+      previousQuantity:latest?Number(latest.purchase_quantity):null,
+      previousUnit:latest?.purchase_unit||null,
+      previousDate:latest?.price_date?day(latest.price_date):null,
+      previousSource:latest?.source||null,
+      changePct,
+      alert,
+      alertThresholdPct:ALERT_THRESHOLD_PCT,
     });
   }
   return {asOf,workspaceId:remote.workspaceId||integration.external_tenant_id||null,rows};
@@ -51,7 +86,7 @@ export async function GET(req){
     const tenant=await requireTenant();
     const asOf=new URL(req.url).searchParams.get('asOf')||new Date().toISOString().slice(0,10);
     const preview=await buildPreview(tenant.id,asOf);
-    return NextResponse.json({...preview,summary:{mapped:preview.rows.length,new:preview.rows.filter(x=>x.status==='new').length,unchanged:preview.rows.filter(x=>x.status==='unchanged').length,missing:preview.rows.filter(x=>x.status==='missing').length}});
+    return NextResponse.json({...preview,alertThresholdPct:ALERT_THRESHOLD_PCT,summary:{mapped:preview.rows.length,new:preview.rows.filter(x=>x.status==='new').length,unchanged:preview.rows.filter(x=>x.status==='unchanged').length,missing:preview.rows.filter(x=>x.status==='missing').length,alerts:preview.rows.filter(x=>x.status==='new'&&x.alert).length}});
   }catch(e){return NextResponse.json({error:e.message},{status:500})}
 }
 
@@ -60,16 +95,18 @@ export async function POST(req){
     const tenant=await requireTenant(),sql=db();
     const body=await req.json().catch(()=>({}));
     const asOf=body.asOf||new Date().toISOString().slice(0,10);
+    const accepted=new Set((body.acceptedSourceIds||body.accepted_source_ids||[]).map(String));
     const preview=await buildPreview(tenant.id,asOf);
-    let imported=0,skipped=0;
+    let imported=0,skipped=0,blockedAlerts=0;
     for(const row of preview.rows){
       if(row.status!=='new'||!row.sourceExternalId||!Number.isFinite(Number(row.purchasePrice))){skipped++;continue}
+      if(row.alert&&!accepted.has(String(row.sourceExternalId))){blockedAlerts++;continue}
       await sql`
         INSERT INTO ingredient_prices
           (tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,supplier,price_date,source,source_external_id,source_metadata)
         VALUES
           (${tenant.id},${row.ingredientId},1,${row.purchaseUnit},${row.purchasePrice},${row.supplier||'ShelfSense'},${row.priceDate}::date,
-           'shelfsense',${row.sourceExternalId},${JSON.stringify({workspaceId:preview.workspaceId,externalItemId:row.externalItemId,externalItemName:row.externalItemName,sourceBaseUnit:row.sourceBaseUnit,sourceUnitCost:row.sourceUnitCost,conversionFactor:row.conversionFactor,effectiveDate:row.effectiveDate})}::jsonb)
+           'shelfsense',${row.sourceExternalId},${JSON.stringify({workspaceId:preview.workspaceId,externalItemId:row.externalItemId,externalItemName:row.externalItemName,sourceBaseUnit:row.sourceBaseUnit,sourceUnitCost:row.sourceUnitCost,conversionFactor:row.conversionFactor,effectiveDate:row.effectiveDate,changePct:row.changePct,alertApproved:row.alert?accepted.has(String(row.sourceExternalId)):false})}::jsonb)
       `;
       imported++;
     }
@@ -77,7 +114,7 @@ export async function POST(req){
       UPDATE integrations SET last_sync_at=NOW(),last_sync_status='success',last_sync_error=NULL,updated_at=NOW()
       WHERE tenant_id=${tenant.id} AND provider='shelfsense'
     `;
-    return NextResponse.json({ok:true,imported,skipped,asOf,summary:{mapped:preview.rows.length,missing:preview.rows.filter(x=>x.status==='missing').length}});
+    return NextResponse.json({ok:true,imported,skipped,blockedAlerts,asOf,summary:{mapped:preview.rows.length,missing:preview.rows.filter(x=>x.status==='missing').length,alerts:preview.rows.filter(x=>x.status==='new'&&x.alert).length}});
   }catch(e){
     try{
       const tenant=await requireTenant(),sql=db();
