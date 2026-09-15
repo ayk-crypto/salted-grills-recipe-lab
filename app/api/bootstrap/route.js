@@ -9,6 +9,7 @@ export async function GET() {
     const tid = tenant.id;
     const ingredients = await sql`
       SELECT i.*,
+        EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='ingredient' AND ef.entity_id=i.id) AS is_flagged,
         (SELECT json_build_object(
           'id', ip.id,'purchase_quantity', ip.purchase_quantity,'purchase_unit', ip.purchase_unit,
           'purchase_price', ip.purchase_price,'price_date', ip.price_date,'supplier', ip.supplier,'source',ip.source,
@@ -27,9 +28,13 @@ export async function GET() {
     `;
     const packaging = await sql`SELECT * FROM packaging_items WHERE is_active = true ORDER BY name`;
     const units = await sql`SELECT * FROM measurement_units WHERE is_active = true ORDER BY unit_group NULLS LAST, name`;
-    const categories = await sql`SELECT * FROM categories WHERE is_active = true AND tenant_id=${tid} ORDER BY name`;
+    const categories = await sql`
+      SELECT c.*,EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='category' AND ef.entity_id=c.id) AS is_flagged
+      FROM categories c WHERE c.is_active = true AND c.tenant_id=${tid} ORDER BY c.name
+    `;
     const recipes = await sql`
       SELECT r.*, rv.version_no, rv.status, rv.yield_quantity, rv.yield_unit, rv.kitchen_notes,
+             EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='recipe' AND ef.entity_id=r.id) AS is_flagged,
              (SELECT count(*)::int FROM recipe_components rc WHERE rc.recipe_version_id = rv.id) AS component_count,
              COALESCE((
                SELECT json_agg(json_build_object(
@@ -47,7 +52,8 @@ export async function GET() {
       ORDER BY r.updated_at DESC, r.name
     `;
     const prices = await sql`
-      SELECT ip.id,ip.ingredient_id,ip.purchase_quantity,ip.purchase_unit,ip.purchase_price,ip.price_date,ip.supplier,ip.source,ip.source_metadata,i.name AS ingredient_name
+      SELECT ip.id,ip.ingredient_id,ip.purchase_quantity,ip.purchase_unit,ip.purchase_price,ip.price_date,ip.supplier,ip.source,ip.source_metadata,i.name AS ingredient_name,
+             EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='price' AND ef.entity_id=ip.id) AS is_flagged
       FROM ingredient_prices ip JOIN ingredients i ON i.id=ip.ingredient_id AND i.tenant_id=${tid}
       WHERE i.is_active=true AND ip.tenant_id=${tid}
       ORDER BY ip.price_date DESC,ip.created_at DESC LIMIT 1000
