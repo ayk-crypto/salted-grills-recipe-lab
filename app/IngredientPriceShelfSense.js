@@ -5,6 +5,7 @@ import {usePathname} from "next/navigation";
 
 const money=n=>Number.isFinite(Number(n))?`Rs ${Number(n).toLocaleString(undefined,{maximumFractionDigits:2})}`:'—';
 const norm=v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
+const receiptDate=v=>{if(!v)return'—';const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})};
 function unitInfo(unit){
   const u=norm(unit);
   if(u==='kg')return['weight',1000];
@@ -105,14 +106,13 @@ export default function IngredientPriceShelfSense(){
   if(state.loading)body=<div className="ipss-loading">Checking ShelfSense…</div>;
   else if(state.error||!state.integration?.connected)body=<div className="ipss-note">ShelfSense is not available for this ingredient right now.</div>;
   else if(row){
-    const canSync=row.status==='new'&&!row.conversionWarning&&row.sourceExternalId;
     const status=row.conversionWarning?'Check conversion':row.status==='new'?(row.alert?'Price review required':'New price available'):row.status==='unchanged'?'Up to date':'No ShelfSense cost';
     body=<div className="ipss-card">
-      <div className="ipss-top"><div><span>SHELFSENSE</span><b>{status}</b></div>{row.status==='new'&&!row.conversionWarning&&<button type="button" className="ipss-sync" disabled={busy} onClick={()=>syncRow(row)}>{busy?'Syncing…':'Sync Price'}</button>}</div>
+      <div className="ipss-top"><div><span>SHELFSENSE</span><b>{status}</b><small>Receipt date: {receiptDate(row.priceDate)}</small></div>{row.status==='new'&&!row.conversionWarning&&<button type="button" className="ipss-sync" disabled={busy} onClick={()=>syncRow(row)}>{busy?'Syncing…':'Sync Price'}</button>}</div>
       <div className="ipss-grid">
-        <div><small>Purchase</small><strong>{row.sourceEnteredQty!=null?`${row.sourceEnteredQty} ${row.sourceEnteredUnit||row.sourcePurchaseUnit||''}`:(row.sourcePurchaseUnit||'—')}</strong><em>{row.sourcePurchaseFactor&&row.sourcePurchaseUnit!==row.sourceBaseUnit?`1 ${row.sourcePurchaseUnit} = ${row.sourcePurchaseFactor} ${row.sourceBaseUnit}`:'Source receipt unit'}</em></div>
+        <div><small>Purchase / Receipt</small><strong>{row.sourceEnteredQty!=null?`${row.sourceEnteredQty} ${row.sourceEnteredUnit||row.sourcePurchaseUnit||''}`:(row.sourcePurchaseUnit||'—')}</strong><em>{row.sourcePurchaseFactor&&row.sourcePurchaseUnit!==row.sourceBaseUnit?`1 ${row.sourcePurchaseUnit} = ${row.sourcePurchaseFactor} ${row.sourceBaseUnit}`:'Source receipt unit'}</em>{row.sourceReceiptTotal!=null&&<em>Receipt value ≈ {money(row.sourceReceiptTotal)} · {receiptDate(row.priceDate)}</em>}</div>
         <div><small>Issue Unit</small><strong>{row.sourceIssueUnit||'—'}</strong><em>Kitchen issue</em></div>
-        <div><small>Costing Unit</small><strong>{money(row.purchasePrice)} / {row.purchaseUnit||ingredient?.default_unit||'—'}</strong><em>Calculated for recipes</em></div>
+        <div><small>Costing Unit</small><strong>{money(row.purchasePrice)} / {row.purchaseUnit||ingredient?.default_unit||'—'}</strong><em>From receipt dated {receiptDate(row.priceDate)}</em></div>
       </div>
       {row.conversionWarning&&<div className="ipss-warning">⚠ {(row.conversionReasons||[]).join(' · ')||'ShelfSense unit conversion needs review.'} Use the manual form below until corrected.</div>}
       {row.alert&&row.status==='new'&&!row.conversionWarning&&<div className="ipss-warning">Price changed {Number(row.changePct).toFixed(1)}% from the current Cost Control price. Review before syncing.</div>}
