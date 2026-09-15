@@ -5,7 +5,7 @@ export function db() {
   return neon(process.env.DATABASE_URL);
 }
 
-export async function getRecipe(id) {
+export async function getRecipe(id, tenantId) {
   const sql = db();
   const [recipe] = await sql`
     SELECT r.*, rv.id AS version_id, rv.version_no, rv.status,
@@ -13,14 +13,14 @@ export async function getRecipe(id) {
            rv.cook_time_minutes, rv.kitchen_notes
     FROM recipes r
     LEFT JOIN recipe_versions rv ON rv.id = r.current_version_id
-    WHERE r.id = ${id}
+    WHERE r.id = ${id} AND r.tenant_id=${tenantId}
   `;
   if (!recipe) return null;
   const components = recipe.version_id ? await sql`
     SELECT rc.*, i.name AS ingredient_name, br.name AS bulk_recipe_name
     FROM recipe_components rc
-    LEFT JOIN ingredients i ON i.id = rc.ingredient_id
-    LEFT JOIN recipes br ON br.id = rc.bulk_recipe_id
+    LEFT JOIN ingredients i ON i.id = rc.ingredient_id AND i.tenant_id=${tenantId}
+    LEFT JOIN recipes br ON br.id = rc.bulk_recipe_id AND br.tenant_id=${tenantId}
     WHERE rc.recipe_version_id = ${recipe.version_id}
     ORDER BY rc.sort_order, rc.id
   ` : [];
