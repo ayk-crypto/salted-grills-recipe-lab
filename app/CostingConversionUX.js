@@ -4,6 +4,7 @@ import {createPortal} from "react-dom";
 import {usePathname} from "next/navigation";
 
 const PACKAGE_UNITS=['can','jar','bottle','bag','packet','pack','carton','tin','tub','tray','box'];
+const YIELD_UNITS=['g','ml','pc'];
 const norm=v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
 const qty=n=>Number.isFinite(Number(n))?Number(n).toLocaleString(undefined,{maximumFractionDigits:3}):'—';
 const money=n=>Number.isFinite(Number(n))?`Rs ${Number(n).toLocaleString(undefined,{maximumFractionDigits:3})}`:'—';
@@ -17,12 +18,13 @@ function unitInfo(unit){
   return[u||'other',1,u||'other'];
 }
 function direct(from,to){const a=unitInfo(from),b=unitInfo(to);return['weight','volume','count'].includes(a[0])&&a[0]===b[0]}
+function preferredYieldUnit(unit){const base=unitInfo(unit)[2];return YIELD_UNITS.includes(base)?base:'g'}
 function fmtDate(v){if(!v)return'';const d=new Date(v);return Number.isNaN(d.getTime())?String(v).slice(0,10):d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
 
 export default function CostingConversionUX(){
   const path=usePathname()||'';
   const [host,setHost]=useState(null),[ingredientName,setIngredientName]=useState(''),[purchaseUnit,setPurchaseUnit]=useState(''),[unitTouched,setUnitTouched]=useState(false);
-  const [bootstrap,setBootstrap]=useState(null),[usable,setUsable]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+  const [bootstrap,setBootstrap]=useState(null),[usable,setUsable]=useState(''),[yieldUnit,setYieldUnit]=useState('g'),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
 
   useEffect(()=>{
     if(!path.startsWith('/ingredients')){setHost(null);return}
@@ -69,12 +71,16 @@ export default function CostingConversionUX(){
   },[purchaseUnit,latestPurchaseUnit,ingredient,unitTouched]);
   const conversion=useMemo(()=>ingredient?.costing_conversions?.find(c=>norm(c.purchase_unit)===activePurchaseUnit),[ingredient,activePurchaseUnit]);
   const needsYield=ingredient&&activePurchaseUnit&&!direct(activePurchaseUnit,ingredient.default_unit);
-  useEffect(()=>{setUsable(conversion?.usable_quantity?String(conversion.usable_quantity):'');setMessage('')},[conversion?.id,activePurchaseUnit]);
+  useEffect(()=>{
+    setUsable(conversion?.usable_quantity?String(conversion.usable_quantity):'');
+    setYieldUnit(conversion?.costing_unit||preferredYieldUnit(ingredient?.default_unit));
+    setMessage('');
+  },[conversion?.id,conversion?.costing_unit,activePurchaseUnit,ingredient?.default_unit]);
 
   async function save(){
-    if(!ingredient||!activePurchaseUnit||!(Number(usable)>0))return;
+    if(!ingredient||!activePurchaseUnit||!(Number(usable)>0)||!YIELD_UNITS.includes(yieldUnit))return;
     setBusy(true);setMessage('');
-    const r=await fetch('/api/costing-conversions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ingredient_id:ingredient.id,purchase_unit:activePurchaseUnit,usable_quantity:Number(usable),costing_unit:ingredient.default_unit,source:ingredient.latest_price?.source==='shelfsense'?'shelfsense':'manual'})});
+    const r=await fetch('/api/costing-conversions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ingredient_id:ingredient.id,purchase_unit:activePurchaseUnit,usable_quantity:Number(usable),costing_unit:yieldUnit,source:ingredient.latest_price?.source==='shelfsense'?'shelfsense':'manual'})});
     const j=await r.json();
     if(!r.ok){setMessage(j.error||'Could not save yield');setBusy(false);return}
     setMessage('Saved. Costing will now use the usable yield.');
@@ -110,9 +116,9 @@ export default function CostingConversionUX(){
   return createPortal(<div className={`costing-conversion-box ${needsYield&&!conversion?'needs-setup':''}`}>
     <div className="costing-conversion-head"><div><span>COSTING CONVERSION</span><b>{directInfo?'Automatic':'Usable yield'}</b></div>{conversion&&<em>Saved</em>}</div>
     {directInfo?<p><strong>{activePurchaseUnit}</strong> converts automatically to <strong>{ingredient.default_unit}</strong>. No setup needed.</p>:<>
-      <p>Tell Cost Control only one thing: how much usable product you actually get from <strong>1 {activePurchaseUnit||'purchase unit'}</strong>.</p>
-      <div className="costing-yield-line"><span>1 {activePurchaseUnit}</span><span>=</span><input type="number" min="0" step="0.01" value={usable} onChange={e=>setUsable(e.target.value)} placeholder="Usable qty"/><b>{ingredient.default_unit} usable</b><button type="button" onClick={save} disabled={busy||!(Number(usable)>0)}>{busy?'Saving…':conversion?'Update':'Save Yield'}</button></div>
-      {!conversion&&<small>Until this is set, Cost Control will keep the purchase price but will not calculate a per-{ingredient.default_unit} recipe cost.</small>}
+      <p>How much usable product do you actually get from <strong>1 {activePurchaseUnit||'purchase unit'}</strong>?</p>
+      <div className="costing-yield-line"><span>1 {activePurchaseUnit}</span><span>=</span><input type="number" min="0" step="0.01" value={usable} onChange={e=>setUsable(e.target.value)} placeholder="Usable qty"/><select value={yieldUnit} onChange={e=>setYieldUnit(e.target.value)} aria-label="Usable yield unit">{YIELD_UNITS.map(u=><option key={u} value={u}>{u} usable</option>)}</select><button type="button" onClick={save} disabled={busy||!(Number(usable)>0)}>{busy?'Saving…':conversion?'Update':'Save Yield'}</button></div>
+      {!conversion&&<small>Choose g, ml, or pc. Until this is set, Cost Control keeps the purchase price but does not calculate a kitchen-unit cost.</small>}
       {conversion&&<small>Costing rule: 1 {activePurchaseUnit} = {qty(conversion.usable_quantity)} {conversion.costing_unit} usable.</small>}
     </>}
     {ingredient.latest_price?.display_purchase_price!=null&&<div className="costing-conversion-context">Latest purchase: {money(ingredient.latest_price.display_purchase_price)} / {qty(ingredient.latest_price.display_purchase_quantity)} {ingredient.latest_price.display_purchase_unit}{ingredient.latest_price.price_date?` · ${fmtDate(ingredient.latest_price.price_date)}`:''}</div>}
