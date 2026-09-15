@@ -44,6 +44,7 @@ export default function ShelfSenseOperations(){
   const mappedIds=useMemo(()=>new Set((integration?.mappings||[]).map(x=>String(x.ingredient_id))),[integration]);
   const unmapped=useMemo(()=>((bootstrap?.ingredients||[]).filter(i=>!mappedIds.has(String(i.id)))),[bootstrap,mappedIds]);
   const alerts=useMemo(()=>((preview?.rows||[]).filter(r=>r.status==='new'&&r.alert)),[preview]);
+  const conversionWarnings=useMemo(()=>((preview?.rows||[]).filter(r=>r.conversionWarning)),[preview]);
   const pending=useMemo(()=>((preview?.rows||[]).filter(r=>r.status==='new')),[preview]);
   const safePending=useMemo(()=>pending.filter(r=>!r.alert&&!r.conversionWarning&&r.sourceExternalId),[pending]);
   const reviewRows=useMemo(()=>{
@@ -113,13 +114,13 @@ export default function ShelfSenseOperations(){
           <div><span>Connection</span><strong className={integration?.connected?'ok':'bad'}>{integration?.connected?'Connected':'Disconnected'}</strong><small>{integration?.integration?.lastSyncAt?`Last sync ${new Date(integration.integration.lastSyncAt).toLocaleString()}`:'No completed sync'}</small></div>
           <div><span>Mapped Ingredients</span><strong>{integration?.mappings?.length||0}</strong><small>{unmapped.length} manual / unmapped</small></div>
           <div><span>Pending Review</span><strong>{pending.length}</strong><small>{safePending.length} safe to select</small></div>
-          <div><span>Needs Attention</span><strong className={(alerts.length+(preview?.summary?.conversionWarnings||0))?'warn':'ok'}>{alerts.length+(preview?.summary?.conversionWarnings||0)}</strong><small>price / conversion review</small></div>
+          <div><span>Needs Attention</span><strong className={(alerts.length+conversionWarnings.length)?'warn':'ok'}>{alerts.length+conversionWarnings.length}</strong><small>{conversionWarnings.length} conversion · {alerts.length} price</small></div>
         </div>
         {message&&<div className="ss-message">{message}</div>}
 
         {tab==='sync'&&<div className="ss-section">
           <div className="ss-section-head ss-review-head"><div><h3>Review ShelfSense Prices</h3><p>Nothing on this screen syncs automatically. Check the unit trail, select only the rows you trust, then sync them. Use Manual keeps the ingredient outside ShelfSense costing.</p></div><div className="ss-review-actions"><button className="ghost" disabled={busy||safePending.length===0} onClick={selectAllSafe}>Select All Safe</button><button className="primary" disabled={busy||selected.size===0} onClick={()=>syncIds([...selected])}>{busy?'Syncing…':`Sync Selected (${selected.size})`}</button></div></div>
-          <div className="ss-review-tools"><input className="ss-search" placeholder="Search ingredient, supplier or unit…" value={reviewSearch} onChange={e=>setReviewSearch(e.target.value)}/><span><b>{preview?.summary?.new||0}</b> pending · <b>{preview?.summary?.unchanged||0}</b> synced · <b>{preview?.summary?.missing||0}</b> no cost</span></div>
+          <div className="ss-review-tools"><input className="ss-search" placeholder="Search ingredient, supplier or unit…" value={reviewSearch} onChange={e=>setReviewSearch(e.target.value)}/><span><b>{preview?.summary?.new||0}</b> pending · <b>{preview?.summary?.unchanged||0}</b> synced · <b>{preview?.summary?.missing||0}</b> no cost · <b>{conversionWarnings.length}</b> conversion checks</span></div>
           <div className="ss-review-table">
             <div className="ss-review-row ss-review-table-head"><span></span><span>Ingredient</span><span>Purchase / Receipt</span><span>Issue Unit</span><span>Kitchen / Cost</span><span>Current Cost</span><span>Status</span><span>Action</span></div>
             {reviewRows.map(r=><ReviewRow key={r.ingredientId} row={r} selected={selected.has(String(r.sourceExternalId))} onToggle={toggleSelected} onSync={syncIds} onManual={setManual} busy={busy}/>) }
@@ -161,15 +162,16 @@ function ReviewRow({row:r,selected,onToggle,onSync,onManual,busy}){
   const purchaseTrail=r.sourcePurchaseFactor&&r.sourcePurchaseUnit&&r.sourceBaseUnit&&String(r.sourcePurchaseUnit).toLowerCase()!==String(r.sourceBaseUnit).toLowerCase()
     ?`1 ${r.sourcePurchaseUnit} = ${qty(r.sourcePurchaseFactor)} ${r.sourceBaseUnit}`
     :r.sourcePurchaseUnit&&r.sourceBaseUnit?`${r.sourcePurchaseUnit} → ${r.sourceBaseUnit}`:'Conversion not available';
-  const status=r.status==='missing'?'No ShelfSense cost':r.status==='unchanged'?'Synced':r.conversionWarning?'Check conversion':r.alert?`Review ${pct(r.changePct)}`:'Ready';
+  const status=r.status==='missing'?'No ShelfSense cost':r.conversionWarning?'Check conversion':r.status==='unchanged'?'Synced':r.alert?`Review ${pct(r.changePct)}`:'Ready';
+  const issueTrail=r.sourceIssueFactor?`1 ${r.sourceIssueUnit} = ${qty(r.sourceIssueFactor)} ${r.sourceBaseUnit}`:(r.sourceIssueUnit&&r.sourceBaseUnit&&String(r.sourceIssueUnit).toLowerCase()!==String(r.sourceBaseUnit).toLowerCase()?'Issue conversion not defined':'Base / issue unit');
   return <div className={`ss-review-row ${r.alert?'has-alert':''} ${r.conversionWarning?'has-warning':''}`}>
     <span>{canSync?<input type="checkbox" checked={selected} onChange={()=>onToggle(r.sourceExternalId)}/>:null}</span>
     <span className="ss-review-name"><b>{r.ingredientName}</b><small>{r.externalItemName||'ShelfSense'} · {r.supplier||'No supplier'} · {r.priceDate||'—'}</small></span>
-    <span><b>{r.sourceEnteredQty!=null?`${qty(r.sourceEnteredQty)} ${r.sourceEnteredUnit||r.sourcePurchaseUnit||''}`:(r.sourcePurchaseUnit||'—')}</b><small>{purchaseTrail}</small>{r.sourceReceiptTotal!=null&&<small>Receipt value ≈ {money(r.sourceReceiptTotal)}</small>}</span>
-    <span><b>{r.sourceIssueUnit||'—'}</b><small>Kitchen issue unit</small></span>
+    <span><b>{r.sourceEnteredQty!=null?`${qty(r.sourceEnteredQty)} ${r.sourceEnteredUnit||r.sourcePurchaseUnit||''}`:(r.sourcePurchaseUnit||'—')}</b><small>{purchaseTrail}</small>{r.sourceReceiptTotal!=null&&<small>Receipt value ≈ {money(r.sourceReceiptTotal)}</small>}{r.conversionReasons?.length>0&&<small className="bad">{r.conversionReasons.join(' · ')}</small>}</span>
+    <span><b>{r.sourceIssueUnit||'—'}</b><small>{issueTrail}</small></span>
     <span><b>{money(r.purchasePrice)} / {r.purchaseUnit||'—'}</b><small>Base: {r.sourceBaseQty!=null?`${qty(r.sourceBaseQty)} `:''}{r.sourceBaseUnit||'—'}</small></span>
     <span><b>{r.previousPrice!=null?`${money(r.previousPrice)} / ${r.previousQuantity} ${r.previousUnit}`:'—'}</b><small>{r.previousSource||'No current price'}{Number.isFinite(Number(r.changePct))?` · ${pct(r.changePct)}`:''}</small></span>
-    <span><em className={`ss-pill ${r.status==='unchanged'?'synced':r.alert||r.conversionWarning?'alert':'safe'}`}>{status}</em></span>
+    <span><em className={`ss-pill ${r.conversionWarning||r.alert?'alert':r.status==='unchanged'?'synced':'safe'}`}>{status}</em></span>
     <span className="ss-row-buttons">{canSync?<button className="ss-sync-one" disabled={busy} onClick={()=>onSync([r.sourceExternalId])}>Sync</button>:<button disabled>Sync</button>}<button disabled={busy} onClick={()=>onManual(r.ingredientId)}>Manual</button></span>
   </div>
 }
