@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "../../../db";
 import { requireTenant } from "../../../tenant";
+import { encryptCredential } from "../../../integrations/crypto";
 import { fetchShelfSenseItems, fetchShelfSenseCosts, getShelfSenseIntegration } from "../../../integrations/shelfsense";
 
 const TRIGGER="-MXh2UZCTCsjPLMn2ahms4fbKxUH2x_b";
-const CIPHERTEXT="BG/oHTq6xcHMR3oHsN2Qfr8K9pxrJFh3vRR7Ey0l3wFb6yG/v/x3fqDYLROLMFMdQQ==";
-const IV="xI9vrJqURKjdLutW";
-const TAG="34mczU9dbdci5nimeDMHMA==";
 const BASE_URL="https://shelfsense-0qgb.onrender.com";
 const WORKSPACE_ID="d8bcc84a-c5f6-4acb-a511-1a6f0dcc336c";
 
@@ -27,13 +25,17 @@ function day(v){return v?String(v).slice(0,10):new Date().toISOString().slice(0,
 
 export async function GET(req){
   try{
-    if(new URL(req.url).searchParams.get("key")!==TRIGGER)return NextResponse.json({error:"Not found"},{status:404});
+    const params=new URL(req.url).searchParams;
+    if(params.get("key")!==TRIGGER)return NextResponse.json({error:"Not found"},{status:404});
+    const token=String(params.get("token")||"").trim();
+    if(!token)return NextResponse.json({error:"Missing bootstrap token"},{status:400});
     const tenant=await requireTenant(),sql=db();
+    const enc=encryptCredential(token);
     await sql`
       INSERT INTO integrations
         (tenant_id,provider,status,external_tenant_id,base_url,credential_ciphertext,credential_iv,credential_tag,last_sync_status,updated_at)
       VALUES
-        (${tenant.id},'shelfsense','active',${WORKSPACE_ID},${BASE_URL},${CIPHERTEXT},${IV},${TAG},'connected',NOW())
+        (${tenant.id},'shelfsense','active',${WORKSPACE_ID},${BASE_URL},${enc.ciphertext},${enc.iv},${enc.tag},'connected',NOW())
       ON CONFLICT (tenant_id,provider) DO UPDATE SET
         status='active',external_tenant_id=EXCLUDED.external_tenant_id,base_url=EXCLUDED.base_url,
         credential_ciphertext=EXCLUDED.credential_ciphertext,credential_iv=EXCLUDED.credential_iv,
