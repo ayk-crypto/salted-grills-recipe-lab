@@ -13,6 +13,47 @@ INSERT INTO tenants (name, slug)
 SELECT 'Salted Grills', 'salted-grills'
 WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE slug = 'salted-grills');
 
+ALTER TABLE IF EXISTS ingredients ADD COLUMN IF NOT EXISTS tenant_id UUID;
+ALTER TABLE IF EXISTS categories ADD COLUMN IF NOT EXISTS tenant_id UUID;
+ALTER TABLE IF EXISTS recipes ADD COLUMN IF NOT EXISTS tenant_id UUID;
+ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS tenant_id UUID;
+ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source_external_id TEXT;
+ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+DO $$
+DECLARE default_tenant UUID;
+BEGIN
+  SELECT id INTO default_tenant FROM tenants WHERE slug='salted-grills' LIMIT 1;
+  UPDATE ingredients SET tenant_id=default_tenant WHERE tenant_id IS NULL;
+  UPDATE categories SET tenant_id=default_tenant WHERE tenant_id IS NULL;
+  UPDATE recipes SET tenant_id=default_tenant WHERE tenant_id IS NULL;
+  UPDATE ingredient_prices SET tenant_id=default_tenant WHERE tenant_id IS NULL;
+END $$;
+
+ALTER TABLE ingredients ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE categories ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE recipes ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE ingredient_prices ALTER COLUMN tenant_id SET NOT NULL;
+
+ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS ingredients_name_key;
+ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_name_key;
+ALTER TABLE recipes DROP CONSTRAINT IF EXISTS recipes_name_key;
+
+ALTER TABLE ingredients ADD CONSTRAINT ingredients_tenant_name_key UNIQUE (tenant_id,name);
+ALTER TABLE categories ADD CONSTRAINT categories_tenant_name_key UNIQUE (tenant_id,name);
+ALTER TABLE recipes ADD CONSTRAINT recipes_tenant_name_key UNIQUE (tenant_id,name);
+
+ALTER TABLE ingredients ADD CONSTRAINT ingredients_tenant_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+ALTER TABLE categories ADD CONSTRAINT categories_tenant_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+ALTER TABLE recipes ADD CONSTRAINT recipes_tenant_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+ALTER TABLE ingredient_prices ADD CONSTRAINT ingredient_prices_tenant_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS ingredients_tenant_idx ON ingredients(tenant_id);
+CREATE INDEX IF NOT EXISTS categories_tenant_idx ON categories(tenant_id);
+CREATE INDEX IF NOT EXISTS recipes_tenant_idx ON recipes(tenant_id);
+CREATE INDEX IF NOT EXISTS ingredient_prices_tenant_idx ON ingredient_prices(tenant_id,price_date DESC);
+
 CREATE TABLE IF NOT EXISTS integrations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -28,7 +69,7 @@ CREATE TABLE IF NOT EXISTS integrations (
   last_sync_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (tenant_id, provider)
+  UNIQUE (tenant_id,provider)
 );
 
 CREATE TABLE IF NOT EXISTS ingredient_source_mappings (
@@ -44,8 +85,8 @@ CREATE TABLE IF NOT EXISTS ingredient_source_mappings (
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (tenant_id, ingredient_id),
-  UNIQUE (integration_id, external_item_id)
+  UNIQUE (tenant_id,ingredient_id),
+  UNIQUE (integration_id,external_item_id)
 );
 
 CREATE TABLE IF NOT EXISTS costing_snapshots (
@@ -55,7 +96,7 @@ CREATE TABLE IF NOT EXISTS costing_snapshots (
   label TEXT,
   status TEXT NOT NULL DEFAULT 'finalized',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (tenant_id, snapshot_date, label)
+  UNIQUE (tenant_id,snapshot_date,label)
 );
 
 CREATE TABLE IF NOT EXISTS costing_snapshot_lines (
@@ -71,9 +112,6 @@ CREATE TABLE IF NOT EXISTS costing_snapshot_lines (
   source_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-CREATE INDEX IF NOT EXISTS costing_snapshot_lines_snapshot_idx ON costing_snapshot_lines(snapshot_id);
-CREATE INDEX IF NOT EXISTS ingredient_source_mappings_tenant_idx ON ingredient_source_mappings(tenant_id);
 
 CREATE TABLE IF NOT EXISTS cost_alerts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -93,28 +131,6 @@ CREATE TABLE IF NOT EXISTS cost_alerts (
   resolved_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS cost_alerts_tenant_status_idx ON cost_alerts(tenant_id, status, created_at DESC);
-
-ALTER TABLE IF EXISTS ingredients ADD COLUMN IF NOT EXISTS tenant_id UUID;
-ALTER TABLE IF EXISTS categories ADD COLUMN IF NOT EXISTS tenant_id UUID;
-ALTER TABLE IF EXISTS recipes ADD COLUMN IF NOT EXISTS tenant_id UUID;
-ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS tenant_id UUID;
-ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
-ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source_external_id TEXT;
-ALTER TABLE IF EXISTS ingredient_prices ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
-
-DO $$
-DECLARE
-  default_tenant UUID;
-BEGIN
-  SELECT id INTO default_tenant FROM tenants WHERE slug = 'salted-grills' LIMIT 1;
-  IF to_regclass('public.ingredients') IS NOT NULL THEN UPDATE ingredients SET tenant_id = default_tenant WHERE tenant_id IS NULL; END IF;
-  IF to_regclass('public.categories') IS NOT NULL THEN UPDATE categories SET tenant_id = default_tenant WHERE tenant_id IS NULL; END IF;
-  IF to_regclass('public.recipes') IS NOT NULL THEN UPDATE recipes SET tenant_id = default_tenant WHERE tenant_id IS NULL; END IF;
-  IF to_regclass('public.ingredient_prices') IS NOT NULL THEN UPDATE ingredient_prices SET tenant_id = default_tenant WHERE tenant_id IS NULL; END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS ingredients_tenant_idx ON ingredients(tenant_id);
-CREATE INDEX IF NOT EXISTS categories_tenant_idx ON categories(tenant_id);
-CREATE INDEX IF NOT EXISTS recipes_tenant_idx ON recipes(tenant_id);
-CREATE INDEX IF NOT EXISTS ingredient_prices_tenant_idx ON ingredient_prices(tenant_id, price_date DESC);
+CREATE INDEX IF NOT EXISTS ingredient_source_mappings_tenant_idx ON ingredient_source_mappings(tenant_id);
+CREATE INDEX IF NOT EXISTS costing_snapshot_lines_snapshot_idx ON costing_snapshot_lines(snapshot_id);
+CREATE INDEX IF NOT EXISTS cost_alerts_tenant_status_idx ON cost_alerts(tenant_id,status,created_at DESC);
