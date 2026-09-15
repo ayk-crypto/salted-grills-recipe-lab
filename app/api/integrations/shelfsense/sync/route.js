@@ -172,8 +172,9 @@ export async function POST(req){
     for(const row of preview.rows){
       if(row.status!=='new'||!row.sourceExternalId||!selected.has(String(row.sourceExternalId))){skipped++;continue}
       if(!Number.isFinite(Number(row.purchasePrice))||!(Number(row.purchaseQuantity)>0)){skipped++;continue}
-      if(row.conversionWarning){blockedConversions++;continue}
-      if(row.alert&&!accepted.has(String(row.sourceExternalId))){blockedAlerts++;continue}
+      const explicitlyAccepted=accepted.has(String(row.sourceExternalId));
+      if(row.conversionWarning&&!explicitlyAccepted){blockedConversions++;continue}
+      if(row.alert&&!explicitlyAccepted){blockedAlerts++;continue}
       await sql`
         INSERT INTO ingredient_prices
           (tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,supplier,price_date,source,source_external_id,source_metadata)
@@ -186,7 +187,8 @@ export async function POST(req){
              sourceIssueUnit:row.sourceIssueUnit,sourceIssueFactor:row.sourceIssueFactor,
              sourceEnteredQty:row.sourceEnteredQty,sourceEnteredUnit:row.sourceEnteredUnit,sourceBaseQty:row.sourceBaseQty,
              sourceReceiptTotal:row.sourceReceiptTotal,expectedBaseQty:row.expectedBaseQty,conversionVariancePct:row.conversionVariancePct,
-             effectiveDate:row.effectiveDate,changePct:row.changePct,alertApproved:row.alert?accepted.has(String(row.sourceExternalId)):false,
+             effectiveDate:row.effectiveDate,changePct:row.changePct,alertApproved:row.alert&&explicitlyAccepted,
+             sourceConversionWarning:row.conversionWarning,sourceConversionAccepted:row.conversionWarning&&explicitlyAccepted,
              needsYieldSetup:row.needsYieldSetup,yieldUsableQuantity:row.yieldUsableQuantity,yieldCostingUnit:row.yieldCostingUnit
            })}::jsonb)
       `;
