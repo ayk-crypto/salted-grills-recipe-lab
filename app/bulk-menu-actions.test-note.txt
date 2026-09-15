@@ -1,1 +1,0 @@
-Menu Costing bulk actions: select rows, select all visible rows, bulk edit category/selling price/target food cost, bulk soft-delete selected menu items. Existing linked cost components are preserved during bulk edit.
