@@ -85,12 +85,12 @@ export default function CostingConversionUX(){
     const patch=()=>{
       if(stopped||!data)return;
       const table=document.querySelector('.v2-table.prices');if(!table)return;
-      const candidates=[...(data.prices||[])];
+      const used=new Set();
       table.querySelectorAll(':scope > .trow').forEach(row=>{
         const c=row.children;if(!c||c.length<6)return;
-        const date=String(c[0]?.textContent||'').slice(0,10),name=norm(c[1]?.textContent),purchase=norm(c[2]?.textContent),priceText=norm(c[3]?.textContent);
-        const p=candidates.find(x=>norm(x.ingredient_name)===name&&String(x.price_date||'').slice(0,10)===date&&purchase.includes(norm(`${x.purchase_quantity} ${x.purchase_unit}`))&&priceText.includes(String(Number(x.purchase_price).toLocaleString()).replace(/,/g,''))===false?false:true) || candidates.find(x=>norm(x.ingredient_name)===name&&String(x.price_date||'').slice(0,10)===date);
-        if(!p)return;
+        const date=String(c[0]?.textContent||'').slice(0,10),name=norm(c[1]?.textContent);
+        const idx=(data.prices||[]).findIndex((x,i)=>!used.has(i)&&norm(x.ingredient_name)===name&&String(x.price_date||'').slice(0,10)===date);
+        if(idx<0)return;used.add(idx);const p=data.prices[idx];
         const cell=c[4];
         if(p.costing_status==='needs_yield'){
           cell.innerHTML='<em class="costing-needs-yield">Needs yield</em><small class="source-purchase-meta">Set usable quantity first</small>';
