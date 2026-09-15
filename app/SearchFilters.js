@@ -11,26 +11,26 @@ function text(row,i){return row.children?.[i]?.innerText?.trim()||''}
 function configFor(path){
   if(path.startsWith('/purchase-prices'))return{
     label:'Price Filters',
-    sorts:[['default','Default'],['unit_desc','Most expensive / unit'],['unit_asc','Least expensive / unit'],['total_desc','Highest purchase total'],['total_asc','Lowest purchase total'],['date_desc','Newest first'],['date_asc','Oldest first'],['name_asc','Ingredient A–Z'],['name_desc','Ingredient Z–A']],
+    sorts:[['default','Default order'],['unit_desc','Highest unit cost'],['unit_asc','Lowest unit cost'],['total_desc','Highest purchase total'],['total_asc','Lowest purchase total'],['date_desc','Newest first'],['date_asc','Oldest first'],['name_asc','Ingredient A–Z'],['name_desc','Ingredient Z–A']],
     facet:'supplier',
   };
   if(path.startsWith('/ingredients'))return{
     label:'Ingredient Filters',
-    sorts:[['default','Default'],['cost_desc','Highest unit cost'],['cost_asc','Lowest unit cost'],['used_desc','Most used'],['used_asc','Least used'],['name_asc','Name A–Z'],['name_desc','Name Z–A']],
+    sorts:[['default','Default order'],['cost_desc','Highest unit cost'],['cost_asc','Lowest unit cost'],['used_desc','Most used'],['used_asc','Least used'],['name_asc','Name A–Z'],['name_desc','Name Z–A']],
     facet:'price_status',
   };
   if(path.startsWith('/prepared-components')||path.startsWith('/bulk-recipes'))return{
     label:'Bulk Recipe Filters',
-    sorts:[['default','Default'],['batch_desc','Highest batch cost'],['batch_asc','Lowest batch cost'],['unit_desc','Highest unit cost'],['unit_asc','Lowest unit cost'],['used_desc','Most used'],['name_asc','Name A–Z']],
+    sorts:[['default','Default order'],['batch_desc','Highest batch cost'],['batch_asc','Lowest batch cost'],['unit_desc','Highest unit cost'],['unit_asc','Lowest unit cost'],['used_desc','Most used'],['name_asc','Name A–Z']],
   };
   if(path.startsWith('/menu-costing')||path.startsWith('/menu-items'))return{
     label:'Menu Filters',
-    sorts:[['default','Default'],['sell_desc','Highest selling price'],['sell_asc','Lowest selling price'],['cost_desc','Highest item cost'],['cost_asc','Lowest item cost'],['food_desc','Highest food cost %'],['food_asc','Lowest food cost %'],['contrib_desc','Highest contribution'],['contrib_asc','Lowest contribution'],['name_asc','Name A–Z']],
+    sorts:[['default','Default order'],['sell_desc','Highest selling price'],['sell_asc','Lowest selling price'],['cost_desc','Highest item cost'],['cost_asc','Lowest item cost'],['food_desc','Highest food cost %'],['food_asc','Lowest food cost %'],['contrib_desc','Highest contribution'],['contrib_asc','Lowest contribution'],['name_asc','Name A–Z']],
     facet:'category',
   };
   if(path.startsWith('/categories'))return{
     label:'Category Filters',
-    sorts:[['default','Default'],['count_desc','Most menu items'],['count_asc','Least menu items'],['name_asc','Name A–Z'],['name_desc','Name Z–A']],
+    sorts:[['default','Default order'],['count_desc','Most menu items'],['count_asc','Least menu items'],['name_asc','Name A–Z'],['name_desc','Name Z–A']],
   };
   return null;
 }
@@ -73,12 +73,15 @@ function compareValues(a,b,desc){
   return desc?bv-av:av-bv;
 }
 
+const QuickChip=({active,onClick,children})=><button type="button" className={`filter-chip ${active?'active':''}`} onClick={onClick}>{children}</button>;
+
 export default function SearchFilters(){
   const path=usePathname()||'/';
   const cfg=useMemo(()=>configFor(path),[path]);
   const [host,setHost]=useState(null),[open,setOpen]=useState(false),[sort,setSort]=useState('default'),[facet,setFacet]=useState('all'),[latestOnly,setLatestOnly]=useState(false),[options,setOptions]=useState([]),[tick,setTick]=useState(0);
+  const [usage,setUsage]=useState('all'),[unit,setUnit]=useState('all'),[unitOptions,setUnitOptions]=useState([]);
 
-  useEffect(()=>{setSort('default');setFacet('all');setLatestOnly(false);setOpen(false)},[path]);
+  useEffect(()=>{setSort('default');setFacet('all');setLatestOnly(false);setUsage('all');setUnit('all');setOpen(false)},[path]);
 
   useEffect(()=>{
     if(!cfg)return;
@@ -102,13 +105,15 @@ export default function SearchFilters(){
     if(!table)return;
     const rows=[...table.querySelectorAll(':scope > .trow')];
     table.classList.add('filter-sort-table');
-    const facets=new Set();
+    const facets=new Set(),units=new Set();
     rows.forEach(row=>{
       row.hidden=false;
       if(cfg.facet==='supplier')facets.add(text(row,5)||'—');
       if(cfg.facet==='category')facets.add(text(row,1)||'—');
+      if(path.startsWith('/ingredients'))units.add(text(row,1)||'—');
     });
     setOptions([...facets].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
+    setUnitOptions([...units].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
 
     let seen=new Set();
     rows.forEach(row=>{
@@ -117,6 +122,12 @@ export default function SearchFilters(){
       if(cfg.facet==='category'&&facet!=='all')visible=text(row,1)===facet;
       if(cfg.facet==='price_status'&&facet==='missing')visible=/missing/i.test(text(row,2));
       if(cfg.facet==='price_status'&&facet==='priced')visible=!/missing/i.test(text(row,2));
+      if(path.startsWith('/ingredients')){
+        const used=n(text(row,4));
+        if(usage==='used')visible=visible&&Number.isFinite(used)&&used>0;
+        if(usage==='unused')visible=visible&&(!Number.isFinite(used)||used===0);
+        if(unit!=='all')visible=visible&&text(row,1)===unit;
+      }
       if(path.startsWith('/purchase-prices')&&latestOnly){
         const key=text(row,1).toLowerCase();
         if(seen.has(key))visible=false;else seen.add(key);
@@ -130,19 +141,36 @@ export default function SearchFilters(){
       const sorted=[...rows].sort((a,b)=>compareValues(rowMetric(path,a,sort),rowMetric(path,b,sort),direction==='desc'));
       sorted.forEach((row,i)=>row.style.order=String(i+1));
     }
-  },[cfg,path,sort,facet,latestOnly,tick]);
+  },[cfg,path,sort,facet,latestOnly,usage,unit,tick]);
 
   if(!cfg||!host)return null;
-  const active=sort!=='default'||facet!=='all'||latestOnly;
+  const activeCount=[sort!=='default',facet!=='all',latestOnly,usage!=='all',unit!=='all'].filter(Boolean).length;
+  const isIngredients=path.startsWith('/ingredients');
+  const reset=()=>{setSort('default');setFacet('all');setLatestOnly(false);setUsage('all');setUnit('all')};
+
   return createPortal(<div className="global-filter-wrap">
-    <button type="button" className={`global-filter-button ${active?'active':''}`} onClick={()=>setOpen(x=>!x)} aria-expanded={open}>Filter{active?' •':''}</button>
-    {open&&<div className="global-filter-popover">
-      <label><span>Sort</span><select value={sort} onChange={e=>setSort(e.target.value)}>{cfg.sorts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
-      {cfg.facet==='supplier'&&<label><span>Supplier</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All suppliers</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
-      {cfg.facet==='category'&&<label><span>Category</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All categories</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
-      {cfg.facet==='price_status'&&<label><span>Price status</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All ingredients</option><option value="priced">Has price</option><option value="missing">Missing price</option></select></label>}
-      {path.startsWith('/purchase-prices')&&<label className="global-filter-check"><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/><span>Latest record per ingredient only</span></label>}
-      <div className="global-filter-actions"><button type="button" onClick={()=>{setSort('default');setFacet('all');setLatestOnly(false)}}>Reset</button><button type="button" className="primary" onClick={()=>setOpen(false)}>Apply</button></div>
+    <button type="button" className={`global-filter-button ${activeCount?'active':''}`} onClick={()=>setOpen(x=>!x)} aria-expanded={open}>
+      <span className="filter-icon">☰</span><span>Filter</span>{activeCount>0&&<b>{activeCount}</b>}
+    </button>
+    {open&&<div className={`global-filter-popover ${isIngredients?'ingredient-filter-popover':''}`}>
+      <div className="filter-popover-head"><div><strong>{cfg.label}</strong><small>Refine what you see</small></div>{activeCount>0&&<button type="button" className="filter-reset-link" onClick={reset}>Clear all</button>}</div>
+
+      {isIngredients&&<>
+        <section className="filter-section"><span className="filter-section-label">Price status</span><div className="filter-chips"><QuickChip active={facet==='all'} onClick={()=>setFacet('all')}>All</QuickChip><QuickChip active={facet==='missing'} onClick={()=>setFacet('missing')}>Missing price</QuickChip><QuickChip active={facet==='priced'} onClick={()=>setFacet('priced')}>Has price</QuickChip></div></section>
+        <section className="filter-section"><span className="filter-section-label">Recipe usage</span><div className="filter-chips"><QuickChip active={usage==='all'} onClick={()=>setUsage('all')}>All</QuickChip><QuickChip active={usage==='used'} onClick={()=>setUsage('used')}>Used in recipes</QuickChip><QuickChip active={usage==='unused'} onClick={()=>setUsage('unused')}>Unused</QuickChip></div></section>
+        <section className="filter-section"><span className="filter-section-label">Quick sort</span><div className="filter-chips"><QuickChip active={sort==='cost_desc'} onClick={()=>setSort(sort==='cost_desc'?'default':'cost_desc')}>Highest cost</QuickChip><QuickChip active={sort==='cost_asc'} onClick={()=>setSort(sort==='cost_asc'?'default':'cost_asc')}>Lowest cost</QuickChip><QuickChip active={sort==='used_desc'} onClick={()=>setSort(sort==='used_desc'?'default':'used_desc')}>Most used</QuickChip></div></section>
+        <div className="filter-two-col"><label><span>Default unit</span><select value={unit} onChange={e=>setUnit(e.target.value)}><option value="all">All units</option>{unitOptions.map(x=><option key={x} value={x}>{x}</option>)}</select></label><label><span>Sort by</span><select value={sort} onChange={e=>setSort(e.target.value)}>{cfg.sorts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label></div>
+      </>}
+
+      {!isIngredients&&<>
+        <label><span>Sort by</span><select value={sort} onChange={e=>setSort(e.target.value)}>{cfg.sorts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+        {cfg.facet==='supplier'&&<label><span>Supplier</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All suppliers</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
+        {cfg.facet==='category'&&<label><span>Category</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All categories</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
+        {cfg.facet==='price_status'&&<label><span>Price status</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All ingredients</option><option value="priced">Has price</option><option value="missing">Missing price</option></select></label>}
+        {path.startsWith('/purchase-prices')&&<label className="global-filter-check"><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/><span>Latest record per ingredient only</span></label>}
+      </>}
+
+      <div className="global-filter-actions"><button type="button" onClick={reset}>Reset</button><button type="button" className="primary" onClick={()=>setOpen(false)}>Done</button></div>
     </div>}
   </div>,host);
 }
