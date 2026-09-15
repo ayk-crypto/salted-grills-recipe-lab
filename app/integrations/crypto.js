@@ -1,8 +1,12 @@
 import crypto from "node:crypto";
 
 function key(){
-  const raw=process.env.INTEGRATION_ENCRYPTION_KEY;
-  if(!raw) throw new Error("INTEGRATION_ENCRYPTION_KEY is not configured");
+  // Prefer a dedicated integration secret in SaaS deployments. The DATABASE_URL
+  // fallback keeps the current single-tenant production usable without storing
+  // third-party credentials in plaintext; set INTEGRATION_ENCRYPTION_KEY before
+  // onboarding external customers so credential rotation is independent of DB access.
+  const raw=process.env.INTEGRATION_ENCRYPTION_KEY||process.env.DATABASE_URL;
+  if(!raw) throw new Error("Integration encryption key is not configured");
   return crypto.createHash("sha256").update(raw).digest();
 }
 
