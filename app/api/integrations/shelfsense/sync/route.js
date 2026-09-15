@@ -5,8 +5,9 @@ import { fetchShelfSenseCosts, getShelfSenseIntegration } from "../../../../inte
 
 const ALERT_THRESHOLD_PCT=25;
 function day(v){return v?String(v).slice(0,10):new Date().toISOString().slice(0,10)}
+function norm(v){return String(v||'').trim().toLowerCase()}
 function unitInfo(unit){
-  const u=String(unit||'').trim().toLowerCase();
+  const u=norm(unit);
   if(u==='kg')return['weight',1000];
   if(['g','gm','gram','grams'].includes(u))return['weight',1];
   if(['l','ltr','liter','litre'].includes(u))return['volume',1000];
@@ -69,18 +70,28 @@ async function buildPreview(tenantId,asOf){
     const sourceBaseQty=finite(c.storedBaseQuantity??c.receivedQuantity);
     const sourceBaseCost=finite(c.unitCost);
     const sourceReceiptTotal=sourceBaseQty!==null&&sourceBaseCost!==null?sourceBaseQty*sourceBaseCost:null;
-    const purchaseNeedsFactor=sourcePurchaseUnit&&sourceBaseUnit&&String(sourcePurchaseUnit).toLowerCase()!==String(sourceBaseUnit).toLowerCase();
-    const conversionWarning=Boolean(purchaseNeedsFactor&&(!sourcePurchaseFactor||sourcePurchaseFactor<=0));
+    const purchaseNeedsFactor=sourcePurchaseUnit&&sourceBaseUnit&&norm(sourcePurchaseUnit)!==norm(sourceBaseUnit);
+    const purchaseFactorMissing=Boolean(purchaseNeedsFactor&&(!sourcePurchaseFactor||sourcePurchaseFactor<=0));
+    const sourceIssueFactor=norm(sourceIssueUnit)===norm(sourceBaseUnit)?1:(norm(sourceIssueUnit)===norm(sourcePurchaseUnit)?sourcePurchaseFactor:null);
+    const issueConversionMissing=Boolean(sourceIssueUnit&&sourceBaseUnit&&norm(sourceIssueUnit)!==norm(sourceBaseUnit)&&!sourceIssueFactor);
+    const expectedBaseQty=sourceEnteredQty!==null&&sourcePurchaseFactor&&norm(sourceEnteredUnit)===norm(sourcePurchaseUnit)?sourceEnteredQty*sourcePurchaseFactor:null;
+    const conversionVariancePct=expectedBaseQty!==null&&sourceBaseQty!==null&&expectedBaseQty>0?Math.abs(sourceBaseQty-expectedBaseQty)/expectedBaseQty*100:null;
+    const receiptConversionMismatch=Number.isFinite(conversionVariancePct)&&conversionVariancePct>2;
+    const conversionReasons=[];
+    if(purchaseFactorMissing)conversionReasons.push('Purchase conversion missing');
+    if(issueConversionMissing)conversionReasons.push('Issue-unit conversion not defined');
+    if(receiptConversionMismatch)conversionReasons.push('Received quantity does not match purchase conversion');
+    const conversionWarning=conversionReasons.length>0;
 
     rows.push({
       ingredientId:m.ingredient_id,ingredientName:m.ingredient_name,
       status:exists.length?'unchanged':'new',externalItemId:m.external_item_id,
       externalItemName:c.itemName||m.external_item_name,
-      priceDate:day(c.effectiveDate),purchaseQuantity:1,
-      purchaseUnit:kitchenUnit,
+      priceDate:day(c.effectiveDate),purchaseQuantity:1,purchaseUnit:kitchenUnit,
       purchasePrice:price,supplier:c.supplier?.name||c.supplierName||null,
       sourceExternalId:sourceId,sourceBaseUnit,sourceUnitCost:sourceBaseCost,conversionFactor:mappingFactor,
-      sourcePurchaseUnit,sourcePurchaseFactor,sourceIssueUnit,sourceEnteredQty,sourceEnteredUnit,sourceBaseQty,sourceReceiptTotal,
+      sourcePurchaseUnit,sourcePurchaseFactor,sourceIssueUnit,sourceIssueFactor,sourceEnteredQty,sourceEnteredUnit,
+      sourceBaseQty,sourceReceiptTotal,expectedBaseQty,conversionVariancePct,conversionReasons,
       effectiveDate:c.effectiveDate||null,
       previousPrice:latest?Number(latest.purchase_price):null,
       previousQuantity:latest?Number(latest.purchase_quantity):null,
@@ -133,10 +144,11 @@ export async function POST(req){
            'shelfsense',${row.sourceExternalId},${JSON.stringify({
              workspaceId:preview.workspaceId,externalItemId:row.externalItemId,externalItemName:row.externalItemName,
              sourceBaseUnit:row.sourceBaseUnit,sourceUnitCost:row.sourceUnitCost,conversionFactor:row.conversionFactor,
-             sourcePurchaseUnit:row.sourcePurchaseUnit,sourcePurchaseFactor:row.sourcePurchaseFactor,sourceIssueUnit:row.sourceIssueUnit,
+             sourcePurchaseUnit:row.sourcePurchaseUnit,sourcePurchaseFactor:row.sourcePurchaseFactor,
+             sourceIssueUnit:row.sourceIssueUnit,sourceIssueFactor:row.sourceIssueFactor,
              sourceEnteredQty:row.sourceEnteredQty,sourceEnteredUnit:row.sourceEnteredUnit,sourceBaseQty:row.sourceBaseQty,
-             sourceReceiptTotal:row.sourceReceiptTotal,effectiveDate:row.effectiveDate,changePct:row.changePct,
-             alertApproved:row.alert?accepted.has(String(row.sourceExternalId)):false
+             sourceReceiptTotal:row.sourceReceiptTotal,expectedBaseQty:row.expectedBaseQty,conversionVariancePct:row.conversionVariancePct,
+             effectiveDate:row.effectiveDate,changePct:row.changePct,alertApproved:row.alert?accepted.has(String(row.sourceExternalId)):false
            })}::jsonb)
       `;
       imported++;
