@@ -1,0 +1,1 @@
+Menu item Excel import fields: Menu Item Name, Category, Selling Price, Target Food Cost %. Existing menu items are updated without replacing linked costing components. New categories referenced in the sheet are created automatically.
