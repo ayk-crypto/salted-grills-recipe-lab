@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useMemo,useState} from "react";
+import {useEffect,useMemo,useRef,useState} from "react";
 import {createPortal} from "react-dom";
 import {usePathname} from "next/navigation";
 
@@ -27,11 +27,19 @@ const QuickChip=({active,onClick,children})=><button type="button" className={`f
 export default function SearchFilters(){
   const path=usePathname()||'/';
   const cfg=useMemo(()=>configFor(path),[path]);
+  const wrapRef=useRef(null);
   const [host,setHost]=useState(null),[open,setOpen]=useState(false),[sort,setSort]=useState('default'),[facet,setFacet]=useState('all'),[latestOnly,setLatestOnly]=useState(false),[options,setOptions]=useState([]),[tick,setTick]=useState(0);
-  const [usage,setUsage]=useState('all'),[unit,setUnit]=useState('all'),[unitOptions,setUnitOptions]=useState([]),[flagged,setFlagged]=useState('all');
+  const [usage,setUsage]=useState('all'),[unit,setUnit]=useState('all'),[unitOptions,setUnitOptions]=useState([]),[flagged,setFlagged]=useState('all'),[priceStatus,setPriceStatus]=useState('all');
 
-  useEffect(()=>{setSort('default');setFacet('all');setLatestOnly(false);setUsage('all');setUnit('all');setFlagged('all');setOpen(false)},[path]);
+  useEffect(()=>{setSort('default');setFacet('all');setLatestOnly(false);setUsage('all');setUnit('all');setFlagged('all');setPriceStatus('all');setOpen(false)},[path]);
   useEffect(()=>{const h=()=>setTick(x=>x+1);window.addEventListener('sg-flags-changed',h);return()=>window.removeEventListener('sg-flags-changed',h)},[]);
+  useEffect(()=>{
+    if(!open)return;
+    const onPointer=e=>{if(wrapRef.current&&!wrapRef.current.contains(e.target))setOpen(false)};
+    const onKey=e=>{if(e.key==='Escape')setOpen(false)};
+    document.addEventListener('pointerdown',onPointer,true);document.addEventListener('keydown',onKey);
+    return()=>{document.removeEventListener('pointerdown',onPointer,true);document.removeEventListener('keydown',onKey)};
+  },[open]);
   useEffect(()=>{
     if(!cfg)return;let raf=0;
     const findHost=()=>{const toolbar=[...document.querySelectorAll('.v2-toolbar')].find(x=>x.querySelector('input[placeholder*="Search"],input[placeholder*="search"]'));if(!toolbar){setHost(null);return}let node=toolbar.querySelector(':scope > .global-filter-host');if(!node){node=document.createElement('div');node.className='global-filter-host';const count=toolbar.querySelector('b');if(count)toolbar.insertBefore(node,count);else toolbar.appendChild(node)}setHost(prev=>prev===node?prev:node)};
@@ -41,20 +49,37 @@ export default function SearchFilters(){
     if(!cfg)return;const table=document.querySelector('.v2-table');if(!table)return;const rows=[...table.querySelectorAll(':scope > .trow')];table.classList.add('filter-sort-table');const facets=new Set(),units=new Set();
     rows.forEach(row=>{row.hidden=false;if(cfg.facet==='supplier')facets.add(text(row,5)||'—');if(cfg.facet==='category')facets.add(text(row,1)||'—');if(path.startsWith('/ingredients'))units.add(text(row,1)||'—')});
     setOptions([...facets].filter(Boolean).sort((a,b)=>a.localeCompare(b)));setUnitOptions([...units].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
-    let seen=new Set();rows.forEach(row=>{let visible=true;if(cfg.facet==='supplier'&&facet!=='all')visible=text(row,5)===facet;if(cfg.facet==='category'&&facet!=='all')visible=text(row,1)===facet;if(cfg.facet==='price_status'&&facet==='missing')visible=/missing/i.test(text(row,2));if(cfg.facet==='price_status'&&facet==='priced')visible=!/missing/i.test(text(row,2));if(flagged==='flagged')visible=visible&&row.dataset.flagged==='true';if(flagged==='unflagged')visible=visible&&row.dataset.flagged!=='true';
+    let seen=new Set();rows.forEach(row=>{
+      let visible=true;
+      if(cfg.facet==='supplier'&&facet!=='all')visible=text(row,5)===facet;
+      if(cfg.facet==='category'&&facet!=='all')visible=text(row,1)===facet;
+      if(cfg.facet==='price_status'&&facet==='missing')visible=/missing/i.test(text(row,2));
+      if(cfg.facet==='price_status'&&facet==='priced')visible=!/missing/i.test(text(row,2));
+      if(flagged==='flagged')visible=visible&&row.dataset.flagged==='true';
+      if(flagged==='unflagged')visible=visible&&row.dataset.flagged!=='true';
       if(path.startsWith('/ingredients')){const used=n(text(row,4));if(usage==='used')visible=visible&&Number.isFinite(used)&&used>0;if(usage==='unused')visible=visible&&(!Number.isFinite(used)||used===0);if(unit!=='all')visible=visible&&text(row,1)===unit}
-      if(path.startsWith('/purchase-prices')&&latestOnly){const key=text(row,1).toLowerCase();if(seen.has(key))visible=false;else seen.add(key)}row.hidden=!visible});
+      if(path.startsWith('/purchase-prices')){
+        const normalized=text(row,4),price=text(row,3),isMissing=/missing/i.test(price)||row.dataset.priceStatus==='missing';
+        const needsYield=/needs yield/i.test(normalized)||row.dataset.priceStatus==='needs_yield';
+        if(priceStatus==='missing')visible=visible&&isMissing;
+        if(priceStatus==='needs_yield')visible=visible&&needsYield;
+        if(priceStatus==='ready')visible=visible&&!isMissing&&!needsYield;
+        if(latestOnly){const key=text(row,1).toLowerCase();if(seen.has(key))visible=false;else seen.add(key)}
+      }
+      row.hidden=!visible;
+    });
     const direction=sort.endsWith('_desc')?'desc':'asc';if(sort==='default')rows.forEach((row,i)=>row.style.order=String(i+1));else{const sorted=[...rows].sort((a,b)=>compareValues(rowMetric(path,a,sort),rowMetric(path,b,sort),direction==='desc'));sorted.forEach((row,i)=>row.style.order=String(i+1))}
-  },[cfg,path,sort,facet,latestOnly,usage,unit,flagged,tick]);
+  },[cfg,path,sort,facet,latestOnly,usage,unit,flagged,priceStatus,tick]);
 
   if(!cfg||!host)return null;
-  const activeCount=[sort!=='default',facet!=='all',latestOnly,usage!=='all',unit!=='all',flagged!=='all'].filter(Boolean).length;
-  const isIngredients=path.startsWith('/ingredients');
-  const reset=()=>{setSort('default');setFacet('all');setLatestOnly(false);setUsage('all');setUnit('all');setFlagged('all')};
-  return createPortal(<div className="global-filter-wrap">
+  const isIngredients=path.startsWith('/ingredients'),isPrices=path.startsWith('/purchase-prices');
+  const activeCount=[sort!=='default',facet!=='all',latestOnly,usage!=='all',unit!=='all',flagged!=='all',priceStatus!=='all'].filter(Boolean).length;
+  const reset=()=>{setSort('default');setFacet('all');setLatestOnly(false);setUsage('all');setUnit('all');setFlagged('all');setPriceStatus('all')};
+  return createPortal(<div className="global-filter-wrap" ref={wrapRef}>
     <button type="button" className={`global-filter-button ${activeCount?'active':''}`} onClick={()=>setOpen(x=>!x)} aria-expanded={open}><span className="filter-icon">☰</span><span>Filter</span>{activeCount>0&&<b>{activeCount}</b>}</button>
     {open&&<div className={`global-filter-popover ${isIngredients?'ingredient-filter-popover':''}`}>
       <div className="filter-popover-head"><div><strong>{cfg.label}</strong><small>Refine what you see</small></div>{activeCount>0&&<button type="button" className="filter-reset-link" onClick={reset}>Clear all</button>}</div>
+      {isPrices&&<section className="filter-section"><span className="filter-section-label">Price status</span><div className="filter-chips"><QuickChip active={priceStatus==='all'} onClick={()=>setPriceStatus('all')}>All</QuickChip><QuickChip active={priceStatus==='missing'} onClick={()=>setPriceStatus('missing')}>Missing price</QuickChip><QuickChip active={priceStatus==='needs_yield'} onClick={()=>setPriceStatus('needs_yield')}>Needs yield</QuickChip><QuickChip active={priceStatus==='ready'} onClick={()=>setPriceStatus('ready')}>Ready cost</QuickChip></div></section>}
       <section className="filter-section"><span className="filter-section-label">Flag status</span><div className="filter-chips"><QuickChip active={flagged==='all'} onClick={()=>setFlagged('all')}>All</QuickChip><QuickChip active={flagged==='flagged'} onClick={()=>setFlagged('flagged')}>⚑ Flagged</QuickChip><QuickChip active={flagged==='unflagged'} onClick={()=>setFlagged('unflagged')}>Unflagged</QuickChip></div></section>
       {isIngredients&&<>
         <section className="filter-section"><span className="filter-section-label">Price status</span><div className="filter-chips"><QuickChip active={facet==='all'} onClick={()=>setFacet('all')}>All</QuickChip><QuickChip active={facet==='missing'} onClick={()=>setFacet('missing')}>Missing price</QuickChip><QuickChip active={facet==='priced'} onClick={()=>setFacet('priced')}>Has price</QuickChip></div></section>
@@ -66,7 +91,7 @@ export default function SearchFilters(){
         <label><span>Sort by</span><select value={sort} onChange={e=>setSort(e.target.value)}>{cfg.sorts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
         {cfg.facet==='supplier'&&<label><span>Supplier</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All suppliers</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
         {cfg.facet==='category'&&<label><span>Category</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All categories</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
-        {path.startsWith('/purchase-prices')&&<label className="global-filter-check"><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/><span>Latest record per ingredient only</span></label>}
+        {isPrices&&<label className="global-filter-check"><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/><span>Latest record per ingredient only</span></label>}
       </>}
       <div className="global-filter-actions"><button type="button" onClick={reset}>Reset</button><button type="button" className="primary" onClick={()=>setOpen(false)}>Done</button></div>
     </div>}
