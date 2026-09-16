@@ -14,24 +14,25 @@ export default function SafetyConfirmation(){
 
   useEffect(()=>{
     const originalConfirm=window.confirm;
-    window.confirm=()=>{
+    window.confirm=(message)=>{
       if(window.__sgSafetyApproved){window.__sgSafetyApproved=false;return true;}
-      return false;
+      return originalConfirm.call(window,message);
     };
 
     const describeClick=(button)=>{
       const text=textOf(button);
       const name=itemName(button);
-      if(button.closest('.component') && (text==='×'||text==='x'||text==='✕')){
+      const explicit=button.dataset.safetyAction;
+      if(button.closest('.component') && (text==='×'||text==='x'||text==='✕'||explicit==='remove-component')){
         return {kind:'delete',title:'Remove cost component?',message:`Remove ${name||'this component'} from the current cost sheet? The change is not final until you save the cost sheet.`};
       }
-      if(text==='Delete'||/^Delete \d+ Item/.test(text)){
+      if(explicit==='delete'||button.classList.contains('danger')||text==='Delete'||/^Delete \d+ Item/.test(text)){
         return {kind:'delete',title:'Confirm deletion',message:name?`You are about to delete “${name}”. Please review this action carefully before continuing.`:'You are about to delete selected cost-control records. Please review this action carefully before continuing.'};
       }
-      if(text==='Confirm Import'){
+      if(explicit==='import'||text==='Confirm Import'){
         return {kind:'change',title:'Confirm import',message:'Please confirm that you have reviewed the import preview and want to apply these records to Cost Control.'};
       }
-      if(text==='Save' && button.closest('.editor-page')){
+      if(explicit==='save'||(text==='Save' && button.closest('.editor-page'))){
         return {kind:'change',title:'Confirm cost-sheet changes',message:`Save the changes to ${name||'this cost sheet'}? Existing costing will be replaced by the values currently shown in the editor.`};
       }
       return null;
@@ -39,7 +40,7 @@ export default function SafetyConfirmation(){
 
     const onClick=(e)=>{
       const button=e.target.closest?.('button');
-      if(!button)return;
+      if(!button||button.closest('[data-safety-dialog="1"]'))return;
       if(button.dataset.sgConfirmed==='1'){delete button.dataset.sgConfirmed;return;}
       const info=describeClick(button);
       if(!info)return;
@@ -88,7 +89,7 @@ export default function SafetyConfirmation(){
         action.button.dataset.sgConfirmed='1';
         action.button.click();
       }
-      setTimeout(()=>{window.__sgSafetyApproved=false},100);
+      setTimeout(()=>{window.__sgSafetyApproved=false},250);
     });
   }
 
@@ -104,7 +105,7 @@ export default function SafetyConfirmation(){
       </div>
       <label className="safety-check"><input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)}/><span>I have reviewed this action and want to continue.</span></label>
       <div className="safety-actions"><button className="ghost" onClick={close}>Cancel</button><button className={destructive?'safety-danger':'primary'} disabled={!checked} onClick={approve}>{destructive?'Confirm Delete':'Confirm Change'}</button></div>
-      <small>This confirmation is the checker step for the same signed-in user and helps prevent accidental changes.</small>
+      <small>This review step helps prevent accidental changes. Unhandled confirmations still fall back to the browser confirmation instead of being silently blocked.</small>
     </div>
   </div>;
 }
