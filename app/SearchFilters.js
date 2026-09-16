@@ -46,8 +46,23 @@ export default function SearchFilters(){
     findHost();const mo=new MutationObserver(()=>{if(!raf)raf=requestAnimationFrame(()=>{raf=0;findHost();setTick(x=>x+1)})});mo.observe(document.body,{subtree:true,childList:true});return()=>{mo.disconnect();cancelAnimationFrame(raf)};
   },[cfg,path]);
   useEffect(()=>{
+    if(!path.startsWith('/purchase-prices'))return;let cancelled=false;
+    const addMissing=async()=>{
+      const j=await fetch('/api/bootstrap',{cache:'no-store'}).then(r=>r.json()).catch(()=>null);if(cancelled||!j)return;
+      const table=document.querySelector('.v2-table.prices');if(!table)return;
+      table.querySelectorAll(':scope > .filter-missing-price-row').forEach(x=>x.remove());
+      (j.ingredients||[]).filter(i=>!i.latest_price).forEach(i=>{
+        const row=document.createElement('div');row.className='trow filter-missing-price-row';row.dataset.priceStatus='missing';row.dataset.flagged=i.is_flagged?'true':'false';
+        row.innerHTML=`<span>—</span><span><b>${String(i.name||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}</b><small>No purchase price recorded</small></span><span>—</span><span><em class="bad">Missing</em></span><span>—</span><span>—</span>`;
+        table.appendChild(row);
+      });
+      setTick(x=>x+1);
+    };
+    const t=setTimeout(addMissing,80);return()=>{cancelled=true;clearTimeout(t);document.querySelectorAll('.filter-missing-price-row').forEach(x=>x.remove())};
+  },[path]);
+  useEffect(()=>{
     if(!cfg)return;const table=document.querySelector('.v2-table');if(!table)return;const rows=[...table.querySelectorAll(':scope > .trow')];table.classList.add('filter-sort-table');const facets=new Set(),units=new Set();
-    rows.forEach(row=>{row.hidden=false;if(cfg.facet==='supplier')facets.add(text(row,5)||'—');if(cfg.facet==='category')facets.add(text(row,1)||'—');if(path.startsWith('/ingredients'))units.add(text(row,1)||'—')});
+    rows.forEach(row=>{row.hidden=false;if(cfg.facet==='supplier'&&row.dataset.priceStatus!=='missing')facets.add(text(row,5)||'—');if(cfg.facet==='category')facets.add(text(row,1)||'—');if(path.startsWith('/ingredients'))units.add(text(row,1)||'—')});
     setOptions([...facets].filter(Boolean).sort((a,b)=>a.localeCompare(b)));setUnitOptions([...units].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
     let seen=new Set();rows.forEach(row=>{
       let visible=true;
@@ -59,12 +74,12 @@ export default function SearchFilters(){
       if(flagged==='unflagged')visible=visible&&row.dataset.flagged!=='true';
       if(path.startsWith('/ingredients')){const used=n(text(row,4));if(usage==='used')visible=visible&&Number.isFinite(used)&&used>0;if(usage==='unused')visible=visible&&(!Number.isFinite(used)||used===0);if(unit!=='all')visible=visible&&text(row,1)===unit}
       if(path.startsWith('/purchase-prices')){
-        const normalized=text(row,4),price=text(row,3),isMissing=/missing/i.test(price)||row.dataset.priceStatus==='missing';
-        const needsYield=/needs yield/i.test(normalized)||row.dataset.priceStatus==='needs_yield';
+        const normalized=text(row,4),price=text(row,3),isMissing=/missing/i.test(price)||row.dataset.priceStatus==='missing',needsYield=/needs yield/i.test(normalized)||row.dataset.priceStatus==='needs_yield';
+        if(priceStatus==='all'&&isMissing)visible=false;
         if(priceStatus==='missing')visible=visible&&isMissing;
-        if(priceStatus==='needs_yield')visible=visible&&needsYield;
+        if(priceStatus==='needs_yield')visible=visible&&needsYield&&!isMissing;
         if(priceStatus==='ready')visible=visible&&!isMissing&&!needsYield;
-        if(latestOnly){const key=text(row,1).toLowerCase();if(seen.has(key))visible=false;else seen.add(key)}
+        if(latestOnly&&!isMissing){const key=text(row,1).toLowerCase();if(seen.has(key))visible=false;else seen.add(key)}
       }
       row.hidden=!visible;
     });
@@ -79,7 +94,7 @@ export default function SearchFilters(){
     <button type="button" className={`global-filter-button ${activeCount?'active':''}`} onClick={()=>setOpen(x=>!x)} aria-expanded={open}><span className="filter-icon">☰</span><span>Filter</span>{activeCount>0&&<b>{activeCount}</b>}</button>
     {open&&<div className={`global-filter-popover ${isIngredients?'ingredient-filter-popover':''}`}>
       <div className="filter-popover-head"><div><strong>{cfg.label}</strong><small>Refine what you see</small></div>{activeCount>0&&<button type="button" className="filter-reset-link" onClick={reset}>Clear all</button>}</div>
-      {isPrices&&<section className="filter-section"><span className="filter-section-label">Price status</span><div className="filter-chips"><QuickChip active={priceStatus==='all'} onClick={()=>setPriceStatus('all')}>All</QuickChip><QuickChip active={priceStatus==='missing'} onClick={()=>setPriceStatus('missing')}>Missing price</QuickChip><QuickChip active={priceStatus==='needs_yield'} onClick={()=>setPriceStatus('needs_yield')}>Needs yield</QuickChip><QuickChip active={priceStatus==='ready'} onClick={()=>setPriceStatus('ready')}>Ready cost</QuickChip></div></section>}
+      {isPrices&&<section className="filter-section"><span className="filter-section-label">Price status</span><div className="filter-chips"><QuickChip active={priceStatus==='all'} onClick={()=>setPriceStatus('all')}>All records</QuickChip><QuickChip active={priceStatus==='missing'} onClick={()=>setPriceStatus('missing')}>Missing price</QuickChip><QuickChip active={priceStatus==='needs_yield'} onClick={()=>setPriceStatus('needs_yield')}>Needs yield</QuickChip><QuickChip active={priceStatus==='ready'} onClick={()=>setPriceStatus('ready')}>Ready cost</QuickChip></div></section>}
       <section className="filter-section"><span className="filter-section-label">Flag status</span><div className="filter-chips"><QuickChip active={flagged==='all'} onClick={()=>setFlagged('all')}>All</QuickChip><QuickChip active={flagged==='flagged'} onClick={()=>setFlagged('flagged')}>⚑ Flagged</QuickChip><QuickChip active={flagged==='unflagged'} onClick={()=>setFlagged('unflagged')}>Unflagged</QuickChip></div></section>
       {isIngredients&&<>
         <section className="filter-section"><span className="filter-section-label">Price status</span><div className="filter-chips"><QuickChip active={facet==='all'} onClick={()=>setFacet('all')}>All</QuickChip><QuickChip active={facet==='missing'} onClick={()=>setFacet('missing')}>Missing price</QuickChip><QuickChip active={facet==='priced'} onClick={()=>setFacet('priced')}>Has price</QuickChip></div></section>
