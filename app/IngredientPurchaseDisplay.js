@@ -23,6 +23,12 @@ export default function IngredientPurchaseDisplay(){
     if(!path.startsWith('/ingredients'))return;
     let cancelled=false,observer=null,raf=0,prices=new Map();
 
+    const openPrice=row=>{
+      const buttons=[...row.querySelectorAll('button')];
+      const priceButton=buttons.find(b=>/^price$/i.test(String(b.textContent||'').trim()));
+      if(priceButton)priceButton.click();
+    };
+
     const patch=()=>{
       if(cancelled||!prices.size)return;
       const table=document.querySelector('.v2-table');
@@ -53,10 +59,24 @@ export default function IngredientPurchaseDisplay(){
         }
         const costCell=cells[3];
         if(p.costing_status==='needs_yield'){
-          costCell.innerHTML='';
-          const badge=document.createElement('em');badge.className='costing-needs-yield';badge.textContent='Needs yield';costCell.appendChild(badge);
-          const small=document.createElement('small');small.className='source-purchase-meta';small.textContent=`Set usable ${p.costing_unit||'kitchen'} per ${p.source_purchase_unit||purchaseUnit}`;costCell.appendChild(small);
-          costCell.title='This purchase unit cannot be converted to a kitchen unit until usable yield is set.';
+          if(costCell.dataset.yieldAction!=='ready'){
+            costCell.dataset.yieldAction='ready';
+            costCell.innerHTML='';
+            const action=document.createElement('button');
+            action.type='button';
+            action.className='yield-setup-action';
+            action.innerHTML='<strong>Needs yield</strong><span>Set usable quantity</span>';
+            action.title='Set the usable yield for this purchase unit';
+            action.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openPrice(row)});
+            costCell.appendChild(action);
+            const hint=document.createElement('small');
+            hint.className='source-purchase-meta yield-setup-hint';
+            hint.textContent=`${p.source_purchase_unit||purchaseUnit} → ${p.costing_unit||'g / ml / pc'}`;
+            costCell.appendChild(hint);
+          }
+          costCell.title='Click to set usable yield.';
+        }else if(costCell.dataset.yieldAction==='ready'){
+          costCell.removeAttribute('data-yield-action');
         }
       });
     };
