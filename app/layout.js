@@ -5,7 +5,7 @@ import "./shelfsense-ops.css";
 import "./app-wide-ux.css";
 import "./filter-refinement.css";
 import "./costing-conversion.css";
-import "./settings.css";
+import "./settings-theme.css";
 import { Manrope } from "next/font/google";
 import MenuImportActions from "./MenuImportActions";
 import BulkMenuActions from "./BulkMenuActions";
