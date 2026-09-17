@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState} from "react";
 import {useRouter} from "next/navigation";
+import "./settings/settings.css";
 
 const NAV=[['/','Overview'],['/ingredients','Ingredients'],['/purchase-prices','Purchase Prices'],['/prepared-components','Bulk Recipes'],['/menu-costing','Menu Costing'],['/cost-analysis','Cost Analysis'],['/categories','Categories'],['/settings','Settings']];
 
