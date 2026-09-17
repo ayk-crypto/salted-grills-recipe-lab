@@ -6,6 +6,7 @@ import "./app-wide-ux.css";
 import "./filter-refinement.css";
 import "./costing-conversion.css";
 import "./settings.css";
+import "./platecost-brand.css";
 import { Manrope } from "next/font/google";
 import MenuImportActions from "./MenuImportActions";
 import BulkMenuActions from "./BulkMenuActions";
@@ -23,8 +24,8 @@ import SettingsNavigation from "./SettingsNavigation";
 const manrope=Manrope({subsets:["latin"],display:"swap",variable:"--font-manrope"});
 
 export const metadata={
- title:"Salted Grills Cost Control",
- description:"Operational ingredient pricing, bulk-recipe costing and menu cost analysis for Salted Grills.",
+ title:"PlateCost — Restaurant Cost Control",
+ description:"Restaurant ingredient pricing, prepared-component costing, menu costing and cost analysis.",
  manifest:"/manifest.webmanifest",
  icons:{icon:"/icon.svg",apple:"/icon.svg"}
 };
