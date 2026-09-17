@@ -13,12 +13,13 @@ function unitInfo(unit){
   return[u||'other',1,u||'other'];
 }
 function meta(v){if(!v)return{};if(typeof v==='object')return v;try{return JSON.parse(v)||{}}catch{return{}}}
+function finite(v){const n=Number(v);return Number.isFinite(n)?n:null}
 function originalPurchase(p){
   if(!p)return null;
   let purchaseQuantity=Number(p.purchase_quantity),purchaseUnit=p.purchase_unit,purchasePrice=Number(p.purchase_price);
   if(p.source==='shelfsense'){
-    const m=meta(p.source_metadata),q=Number(m.sourceEnteredQty),total=Number(m.sourceReceiptTotal),u=m.sourceEnteredUnit||m.sourcePurchaseUnit;
-    if(Number.isFinite(q)&&q>0&&u&&Number.isFinite(total)&&total>=0){purchaseQuantity=q;purchaseUnit=u;purchasePrice=total}
+    const m=meta(p.source_metadata),q=finite(m.sourceEnteredQty),total=finite(m.sourceReceiptTotal),u=m.sourceEnteredUnit||m.sourcePurchaseUnit;
+    if(q&&q>0&&u&&total!==null&&total>=0){purchaseQuantity=q;purchaseUnit=u;purchasePrice=total}
   }
   return{purchaseQuantity,purchaseUnit,purchasePrice};
 }
@@ -28,26 +29,48 @@ function isDirect(fromUnit,toUnit){
 }
 function decoratePrice(p,ingredient,conversionMap){
   if(!p)return p;
-  const original=originalPurchase(p);
+  const original=originalPurchase(p),m=meta(p.source_metadata);
   const base={...p,
-    display_purchase_quantity:original.purchaseQuantity,
-    display_purchase_unit:original.purchaseUnit,
-    display_purchase_price:original.purchasePrice,
+    display_purchase_quantity:original?.purchaseQuantity,
+    display_purchase_unit:original?.purchaseUnit,
+    display_purchase_price:original?.purchasePrice,
   };
-  if(!(Number.isFinite(original.purchaseQuantity)&&original.purchaseQuantity>0&&Number.isFinite(original.purchasePrice)))return{...base,costing_status:'invalid'};
   const target=ingredient.default_unit||'g';
+
+  // ShelfSense owns purchase-to-storage conversion and storage unit cost.
+  // PlateCost starts from the ShelfSense storage unit, then applies usable yield only when required.
+  if(p.source==='shelfsense'){
+    const storageUnit=m.sourceBaseUnit||null,storageCost=finite(m.sourceUnitCost);
+    const shelfBase={...base,storage_unit:storageUnit,storage_unit_cost:storageCost};
+    if(!storageUnit||storageCost===null)return{...shelfBase,costing_status:'invalid',costing_method:'storage_cost_missing'};
+    if(isDirect(storageUnit,target))return{...shelfBase,
+      purchase_quantity:1,purchase_unit:storageUnit,purchase_price:storageCost,
+      costing_status:'ready',costing_unit:unitInfo(target)[2],costing_method:'storage_direct',source_purchase_unit:storageUnit
+    };
+    const conv=conversionMap.get(`${ingredient.id}|${norm(storageUnit)}`);
+    if(conv)return{...shelfBase,
+      purchase_quantity:Number(conv.usable_quantity),purchase_unit:conv.costing_unit,purchase_price:storageCost,
+      costing_status:'ready',costing_unit:unitInfo(conv.costing_unit)[2],costing_method:'storage_yield',
+      usable_quantity:Number(conv.usable_quantity),usable_costing_unit:conv.costing_unit,source_purchase_unit:storageUnit
+    };
+    return{...shelfBase,
+      purchase_quantity:0,purchase_unit:target,purchase_price:storageCost,
+      costing_status:'needs_yield',costing_unit:unitInfo(target)[2],costing_method:'storage_yield_required',source_purchase_unit:storageUnit
+    };
+  }
+
+  // Manual prices retain the existing purchase-unit based behavior.
+  if(!(Number.isFinite(original?.purchaseQuantity)&&original.purchaseQuantity>0&&Number.isFinite(original?.purchasePrice)))return{...base,costing_status:'invalid'};
   if(isDirect(original.purchaseUnit,target))return{...base,
     purchase_quantity:original.purchaseQuantity,purchase_unit:original.purchaseUnit,purchase_price:original.purchasePrice,
     costing_status:'ready',costing_unit:unitInfo(target)[2],costing_method:'direct'
   };
   const conv=conversionMap.get(`${ingredient.id}|${norm(original.purchaseUnit)}`);
-  if(conv){
-    return{...base,
-      purchase_quantity:original.purchaseQuantity*Number(conv.usable_quantity),purchase_unit:conv.costing_unit,purchase_price:original.purchasePrice,
-      costing_status:'ready',costing_unit:unitInfo(conv.costing_unit)[2],costing_method:'yield',
-      usable_quantity:Number(conv.usable_quantity),usable_costing_unit:conv.costing_unit,source_purchase_unit:original.purchaseUnit
-    };
-  }
+  if(conv)return{...base,
+    purchase_quantity:original.purchaseQuantity*Number(conv.usable_quantity),purchase_unit:conv.costing_unit,purchase_price:original.purchasePrice,
+    costing_status:'ready',costing_unit:unitInfo(conv.costing_unit)[2],costing_method:'yield',
+    usable_quantity:Number(conv.usable_quantity),usable_costing_unit:conv.costing_unit,source_purchase_unit:original.purchaseUnit
+  };
   return{...base,
     purchase_quantity:0,purchase_unit:target,purchase_price:original.purchasePrice,
     costing_status:'needs_yield',costing_unit:unitInfo(target)[2],costing_method:'yield_required',source_purchase_unit:original.purchaseUnit
@@ -57,7 +80,7 @@ function priceDerived(p,ingredient,conversionMap){
   const d=decoratePrice(p,ingredient,conversionMap);
   if(!d)return{costing_status:'invalid',normalized_cost:null,normalized_unit:null};
   const info=unitInfo(d.purchase_unit),base=Number(d.purchase_quantity||0)*info[1];
-  return{costing_status:d.costing_status,normalized_cost:base>0?Number(d.purchase_price)/base:null,normalized_unit:info[2],source_purchase_unit:d.source_purchase_unit||d.display_purchase_unit,usable_quantity:d.usable_quantity||null,usable_costing_unit:d.usable_costing_unit||null};
+  return{costing_status:d.costing_status,normalized_cost:base>0?Number(d.purchase_price)/base:null,normalized_unit:info[2],source_purchase_unit:d.source_purchase_unit||d.display_purchase_unit,storage_unit:d.storage_unit||null,storage_unit_cost:d.storage_unit_cost??null,usable_quantity:d.usable_quantity||null,usable_costing_unit:d.usable_costing_unit||null};
 }
 
 export async function GET() {
