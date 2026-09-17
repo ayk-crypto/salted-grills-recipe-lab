@@ -26,9 +26,9 @@ export default function IngredientCostPage(){
  function buildRow(i,recipes){
    const p=i.latest_price,m=meta(p?.source_metadata),isShelf=p?.source==='shelfsense';
    const purchaseQty=Number(p?.display_purchase_quantity??p?.purchase_quantity),purchaseUnit=p?.display_purchase_unit||p?.purchase_unit,purchasePrice=Number(p?.display_purchase_price??p?.purchase_price);
-   const storageUnit=(isShelf&&(p?.storage_unit||m.sourceBaseUnit))||(!isShelf?p?.purchase_unit:null);
+   const storageUnit=p?.storage_unit||(isShelf?m.sourceBaseUnit:(p?.source_purchase_unit||p?.display_purchase_unit||p?.purchase_unit))||null;
    let storageCost=isShelf?Number(p?.storage_unit_cost??m.sourceUnitCost):NaN;
-   if(!Number.isFinite(storageCost)&&!isShelf&&p){const info=unitInfo(p.purchase_unit),qty=Number(p.purchase_quantity)*info[1];if(qty>0)storageCost=Number(p.purchase_price)/qty*info[1]}
+   if(!Number.isFinite(storageCost)&&!isShelf&&p&&Number.isFinite(purchasePrice)&&purchaseQty>0)storageCost=purchasePrice/purchaseQty;
    const conversions=i.costing_conversions||[];
    const conv=conversions.find(c=>norm(c.purchase_unit)===norm(storageUnit))||null;
    const isDirect=storageUnit&&direct(storageUnit,i.default_unit);
