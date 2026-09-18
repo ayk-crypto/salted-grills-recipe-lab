@@ -4,7 +4,7 @@ import { requireTenant } from "../../tenant";
 
 function costMeta(b){
   if((b.recipe_type||"menu")!=="menu") return b.kitchen_notes||null;
-  return JSON.stringify({selling_price:Number(b.selling_price)||0,target_food_cost:Number(b.target_food_cost)||35});
+  return JSON.stringify({selling_price:Number(b.selling_price)||0,target_food_cost:Number(b.target_food_cost)||35,delivery_commission_pct:Number(b.delivery_commission_pct)||0,payment_fee_pct:Number(b.payment_fee_pct)||0,other_variable_pct:Number(b.other_variable_pct)||0,delivery_fixed_cost:Number(b.delivery_fixed_cost)||0});
 }
 function parseMeta(v){try{const x=JSON.parse(v||"{}");return x&&typeof x==="object"?x:{}}catch{return {}}}
 
