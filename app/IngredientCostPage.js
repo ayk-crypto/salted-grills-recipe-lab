@@ -19,18 +19,20 @@ function fmtDate(v){return v?new Date(v).toLocaleDateString(undefined,{day:'2-di
 
 export default function IngredientCostPage(){
  const router=useRouter();
- const [data,setData]=useState({tenant:null,ingredients:[],recipes:[]});
- const [loading,setLoading]=useState(true),[error,setError]=useState(''),[q,setQ]=useState(''),[view,setView]=useState('all'),[navOpen,setNavOpen]=useState(false);
+ const [data,setData]=useState({tenant:null,ingredients:[],recipes:[]}),[integration,setIntegration]=useState({connected:false,items:[],mappings:[]});
+ const [loading,setLoading]=useState(true),[error,setError]=useState(''),[q,setQ]=useState(''),[view,setView]=useState('all'),[category,setCategory]=useState('all'),[sourceFilter,setSourceFilter]=useState('all'),[usageFilter,setUsageFilter]=useState('all'),[sort,setSort]=useState('name_asc'),[navOpen,setNavOpen]=useState(false);
  const [yieldItem,setYieldItem]=useState(null),[yieldQty,setYieldQty]=useState(''),[yieldUnit,setYieldUnit]=useState('g'),[saving,setSaving]=useState(false);
  const [editItem,setEditItem]=useState(null),[notice,setNotice]=useState(''),[importOpen,setImportOpen]=useState(false),[selected,setSelected]=useState({}),[deleteConfirm,setDeleteConfirm]=useState(null);
- async function load(){setLoading(true);setError('');try{const r=await fetch('/api/bootstrap',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Could not load ingredients');setData(j)}catch(e){setError(e.message)}finally{setLoading(false)}}
+ async function load(){setLoading(true);setError('');try{const [r,ir]=await Promise.all([fetch('/api/bootstrap',{cache:'no-store'}),fetch('/api/integrations/shelfsense',{cache:'no-store'})]),[j,ij]=await Promise.all([r.json(),ir.json()]);if(!r.ok)throw new Error(j.error||'Could not load ingredients');setData(j);if(ir.ok)setIntegration({connected:Boolean(ij.connected),items:ij.items||[],mappings:ij.mappings||[]})}catch(e){setError(e.message)}finally{setLoading(false)}}
  useEffect(()=>{load();const refreshCosting=()=>load(),storageRefresh=e=>{if(e.key==='platecost:costing-updated')load()};window.addEventListener('platecost:costing-updated',refreshCosting);window.addEventListener('storage',storageRefresh);return()=>{window.removeEventListener('platecost:costing-updated',refreshCosting);window.removeEventListener('storage',storageRefresh)}},[]);
  useEffect(()=>{document.body.classList.toggle('v2-nav-open',navOpen);return()=>document.body.classList.remove('v2-nav-open')},[navOpen]);
  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),2600);return()=>clearTimeout(t)},[notice]);
- const rows=useMemo(()=>data.ingredients.map(i=>buildRow(i,data.recipes||[])),[data]);
- const visible=useMemo(()=>rows.filter(r=>r.name.toLowerCase().includes(q.toLowerCase())).filter(r=>view==='all'||(view==='yield'&&r.needsYield)||(view==='ready'&&r.ready)||(view==='flagged'&&r.isFlagged)||(view==='missing'&&!r.hasSource)),[rows,q,view]);
+ const shelfMeta=useMemo(()=>{const itemById=new Map((integration.items||[]).map(x=>[String(x.id),x])),mapByIngredient=new Map((integration.mappings||[]).filter(x=>x.source_type==='shelfsense').map(x=>[String(x.ingredient_id),x]));return{itemById,mapByIngredient}},[integration]);
+ const rows=useMemo(()=>data.ingredients.map(i=>buildRow(i,data.recipes||[],shelfMeta)),[data,shelfMeta]);
+ const categories=useMemo(()=>[...new Set(rows.map(r=>r.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),[rows]);
+ const visible=useMemo(()=>{const query=q.trim().toLowerCase();const filtered=rows.filter(r=>!query||((r.name+' '+r.category+' '+(r.supplier||'')+' '+(r.source||'')).toLowerCase().includes(query))).filter(r=>view==='all'||(view==='yield'&&r.needsYield)||(view==='ready'&&r.ready)||(view==='flagged'&&r.isFlagged)||(view==='missing'&&!r.hasSource)).filter(r=>category==='all'||r.category===category).filter(r=>sourceFilter==='all'||(sourceFilter==='shelfsense'&&r.source==='shelfsense')||(sourceFilter==='manual'&&r.source!=='shelfsense')).filter(r=>usageFilter==='all'||(usageFilter==='used'&&r.used>0)||(usageFilter==='unused'&&r.used===0));return [...filtered].sort((a,b)=>sort==='name_desc'?b.name.localeCompare(a.name):sort==='cost_desc'?(Number.isFinite(b.finalCost)?b.finalCost:-1)-(Number.isFinite(a.finalCost)?a.finalCost:-1):sort==='cost_asc'?(Number.isFinite(a.finalCost)?a.finalCost:Number.MAX_VALUE)-(Number.isFinite(b.finalCost)?b.finalCost:Number.MAX_VALUE):sort==='used_desc'?b.used-a.used:a.name.localeCompare(b.name))},[rows,q,view,category,sourceFilter,usageFilter,sort]);
  const counts=useMemo(()=>({all:rows.length,yield:rows.filter(x=>x.needsYield).length,ready:rows.filter(x=>x.ready).length,flagged:rows.filter(x=>x.isFlagged).length,missing:rows.filter(x=>!x.hasSource).length}),[rows]);
- function buildRow(i,recipes){
+ function buildRow(i,recipes,shelfMeta){
    const p=i.latest_price,m=meta(p?.source_metadata),isShelf=p?.source==='shelfsense';
    const purchaseQty=Number(p?.display_purchase_quantity??p?.purchase_quantity),purchaseUnit=p?.display_purchase_unit||p?.purchase_unit,purchasePrice=Number(p?.display_purchase_price??p?.purchase_price);
    const storageUnit=p?.storage_unit||(isShelf?m.sourceBaseUnit:(p?.source_purchase_unit||p?.display_purchase_unit||p?.purchase_unit))||null;
@@ -43,7 +45,9 @@ export default function IngredientCostPage(){
    if(Number.isFinite(storageCost)&&storageUnit){const s=unitInfo(storageUnit),t=unitInfo(i.default_unit);if(isDirect)finalCost=storageCost*(t[1]/s[1]);else if(conv){const c=unitInfo(conv.costing_unit);if(c[0]===t[0])finalCost=storageCost*(t[1]/(Number(conv.usable_quantity)*c[1]))}}
    if(!Number.isFinite(finalCost)&&p?.costing_status==='ready'){const info=unitInfo(p.purchase_unit),base=Number(p.purchase_quantity)*info[1];if(base>0){finalCost=Number(p.purchase_price)/base*unitInfo(i.default_unit)[1];finalUnit=unitInfo(i.default_unit)[2]}}
    const used=recipes.filter(r=>(r.components_summary||[]).some(c=>String(c.ingredient_id)===String(i.id))).length;
-   return{id:i.id,name:i.name,type:i.ingredient_type||'raw',defaultUnit:i.default_unit||'g',isFlagged:Boolean(i.is_flagged),purchaseQty,purchaseUnit,purchasePrice,date:p?.price_date,source:p?.source||null,supplier:p?.supplier||null,storageUnit,storageCost,conv,isDirect,needsYield:Boolean(storageUnit&&!isDirect&&!conv),ready:Number.isFinite(finalCost),finalCost,finalUnit,used,hasSource:Boolean(p),raw:i};
+   const mapping=shelfMeta?.mapByIngredient?.get(String(i.id)),shelfItem=mapping?shelfMeta?.itemById?.get(String(mapping.external_item_id)):null;
+   const category=String(shelfItem?.category||'Uncategorized');
+   return{id:i.id,name:i.name,type:i.ingredient_type||'raw',defaultUnit:i.default_unit||'g',isFlagged:Boolean(i.is_flagged),purchaseQty,purchaseUnit,purchasePrice,date:p?.price_date,source:p?.source||null,supplier:p?.supplier||null,storageUnit,storageCost,conv,isDirect,needsYield:Boolean(storageUnit&&!isDirect&&!conv),ready:Number.isFinite(finalCost),finalCost,finalUnit,used,hasSource:Boolean(p),category,shelfMapped:Boolean(mapping),raw:i};
  }
  async function toggleFlag(r){const method=r.isFlagged?'DELETE':'POST';const res=await fetch('/api/flags',{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({entity_type:'ingredient',entity_id:r.id})});if(res.ok){setNotice(r.isFlagged?'Unflagged':'Flagged for review');await load()}}
  function openYield(r){setYieldItem(r);setYieldQty(r.conv?.usable_quantity||'');setYieldUnit(r.conv?.costing_unit||r.defaultUnit||'g')}
