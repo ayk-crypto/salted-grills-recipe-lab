@@ -50,14 +50,29 @@ export async function PATCH(req){
 
 export async function DELETE(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;let item;
-    if(body.id)[item]=await sql`SELECT id,name FROM ingredients WHERE id=${body.id} AND tenant_id=${tid}`;
-    else if(body.name)[item]=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} AND name=${clean(body.name)}`;
-    if(!item)return NextResponse.json({error:"Ingredient not found"},{status:404});
-    const usage=await sql`SELECT DISTINCT r.id,r.name,r.recipe_type FROM recipes r JOIN recipe_versions rv ON rv.id=r.current_version_id JOIN recipe_components rc ON rc.recipe_version_id=rv.id WHERE r.tenant_id=${tid} AND r.is_active=true AND rc.ingredient_id=${item.id} ORDER BY r.name`;
-    if(usage.length)return NextResponse.json({error:`${item.name} is still used in ${usage.length} active item${usage.length===1?'':'s'}. Remove it from those items first.`,used_in:usage},{status:409});
-    await sql`DELETE FROM ingredient_prices WHERE tenant_id=${tid} AND ingredient_id=${item.id}`;
-    await sql`DELETE FROM ingredients WHERE id=${item.id} AND tenant_id=${tid}`;
-    return NextResponse.json({ok:true,item});
+    const body=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    const requested=Array.isArray(body.ids)?body.ids.map(String).filter(Boolean):body.id?[String(body.id)]:[];
+    if(!requested.length&&body.name){
+      const [named]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${clean(body.name)}) LIMIT 1`;
+      if(named)requested.push(String(named.id));
+    }
+    if(!requested.length)return NextResponse.json({error:"Select at least one ingredient"},{status:400});
+    const items=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} AND id = ANY(${requested}::uuid[]) AND is_active=TRUE ORDER BY name`;
+    if(!items.length)return NextResponse.json({error:"No active ingredients found"},{status:404});
+    const deleted=[],blocked=[];
+    for(const item of items){
+      const usage=await sql`
+        SELECT DISTINCT r.id,r.name,r.recipe_type
+        FROM recipes r
+        JOIN recipe_versions rv ON rv.id=r.current_version_id
+        JOIN recipe_components rc ON rc.recipe_version_id=rv.id
+        WHERE r.tenant_id=${tid} AND r.is_active=TRUE AND rc.ingredient_id=${item.id}
+        ORDER BY r.name`;
+      if(usage.length){blocked.push({id:item.id,name:item.name,used_in:usage});continue}
+      await sql`UPDATE ingredient_source_mappings SET is_active=FALSE,updated_at=NOW() WHERE tenant_id=${tid} AND ingredient_id=${item.id}`;
+      await sql`UPDATE ingredients SET is_active=FALSE,updated_at=NOW() WHERE tenant_id=${tid} AND id=${item.id}`;
+      deleted.push({id:item.id,name:item.name});
+    }
+    return NextResponse.json({ok:true,deleted,blocked,deletedCount:deleted.length,blockedCount:blocked.length});
   }catch(e){return NextResponse.json({error:e.message},{status:500});}
 }
