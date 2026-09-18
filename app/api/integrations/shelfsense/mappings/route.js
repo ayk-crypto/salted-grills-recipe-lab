@@ -61,10 +61,10 @@ export async function POST(req){
         let [ingredient]=await sql`SELECT id,name,default_unit,is_active FROM ingredients WHERE tenant_id=${tenant.id} AND lower(name)=lower(${item.name}) LIMIT 1`;
         let wasCreated=false;
         if(!ingredient){
-          [ingredient]=await sql`INSERT INTO ingredients(tenant_id,name,default_unit,ingredient_type,notes,is_active) VALUES(${tenant.id},${item.name},${kitchenUnit},${item.category||'raw'},'Added from ShelfSense import',TRUE) RETURNING id,name,default_unit,is_active`;
+          [ingredient]=await sql`INSERT INTO ingredients(tenant_id,name,default_unit,ingredient_type,ingredient_category,notes,is_active) VALUES(${tenant.id},${item.name},${kitchenUnit},'raw',${item.category||null},'Added from ShelfSense import',TRUE) RETURNING id,name,default_unit,is_active`;
           created++;wasCreated=true;
         }else if(!ingredient.is_active){
-          [ingredient]=await sql`UPDATE ingredients SET is_active=TRUE,default_unit=${kitchenUnit},ingredient_type=CASE WHEN ingredient_type IS NULL OR ingredient_type='raw' THEN ${item.category||'raw'} ELSE ingredient_type END,notes=COALESCE(notes,'Re-imported from ShelfSense'),updated_at=NOW() WHERE id=${ingredient.id} AND tenant_id=${tenant.id} RETURNING id,name,default_unit,is_active`;
+          [ingredient]=await sql`UPDATE ingredients SET is_active=TRUE,default_unit=${kitchenUnit},ingredient_category=COALESCE(ingredient_category,${item.category||null}),notes=COALESCE(notes,'Re-imported from ShelfSense'),updated_at=NOW() WHERE id=${ingredient.id} AND tenant_id=${tenant.id} RETURNING id,name,default_unit,is_active`;
         }
         await sql`
           INSERT INTO ingredient_source_mappings
