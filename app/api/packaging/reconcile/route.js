@@ -11,18 +11,18 @@ export async function POST(req){
   const integration=await getShelfSenseIntegration(tenant.id);
   if(!integration)return NextResponse.json({error:"ShelfSense is not connected"},{status:400});
   const remote=await fetchShelfSenseCosts(tenant.id);
-  const rows=remote.rows||remote.items||remote.costs||[];
-  const byId=new Map(rows.map(x=>[String(x.itemId||x.id||x.externalItemId),x]));
+  const rows=remote.costs||remote.rows||remote.items||[];
+  const byId=new Map(rows.map(x=>[String(x.shelfSenseItemId||x.itemId||x.id||x.externalItemId),x]));
   let added=0,updated=0,missing=0;const results=[];
   for(const id of ids){
     const x=byId.get(id);
     if(!x){missing++;results.push({id,status:"missing"});continue}
     const name=String(x.itemName||x.name||"").trim();if(!name){missing++;continue}
     const m=metadata(x);
-    const qty=Number(x.purchaseQuantity||x.purchase_quantity||m.sourceEnteredQty||1);
-    const unit=String(x.purchaseUnit||x.purchase_unit||m.sourceEnteredUnit||m.sourcePurchaseUnit||x.storageUnit||x.unit||"pc");
-    const price=Number(x.purchasePrice||x.purchase_price||m.sourceReceiptTotal||x.storageCost||x.unitCost||0);
-    const storageCost=Number(x.storageCost||x.unitCost||m.sourceUnitCost||0);
+    const qty=Number(x.enteredQuantity??x.receivedQuantity??x.purchaseQuantity??m.sourceEnteredQty??1);
+    const unit=String(x.enteredUnit||x.purchaseUnit||x.purchase_unit||m.sourceEnteredUnit||m.sourcePurchaseUnit||x.baseUnit||x.storageUnit||x.unit||"pc");
+    const price=Number(x.receiptTotal??x.totalCost??x.receivedTotalCost??x.purchasePrice??m.sourceReceiptTotal??0);
+    const storageCost=Number(x.unitCost??x.storageCost??m.sourceUnitCost??0);
     const effectiveQty=Number.isFinite(qty)&&qty>0?qty:1;
     const effectivePrice=Number.isFinite(price)&&price>=0?price:0;
     const effectiveUnitCost=Number.isFinite(storageCost)&&storageCost>=0?storageCost:(effectiveQty>0?effectivePrice/effectiveQty:null);
