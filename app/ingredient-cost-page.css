@@ -12,3 +12,5 @@
 .ict-name small{white-space:normal}.ingredient-status{margin-top:2px}.ingredient-cost-table{position:relative}.ict-head{position:sticky;top:0;z-index:3}
 @media(max-width:980px){.ingredient-filter-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.ingredient-filter-grid{grid-template-columns:1fr}.ingredient-search-row{grid-template-columns:1fr}.ingredient-list-meta{align-items:flex-start;flex-direction:column}.ingredient-list-meta>div{width:100%}.bulk-delete{width:100%}}
+
+.ingredient-category-help{display:block;margin:-2px 0 2px;color:#7b817c;font-size:8px;line-height:1.45}
