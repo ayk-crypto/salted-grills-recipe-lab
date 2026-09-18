@@ -5,7 +5,7 @@ import "./settings/settings.css";
 
 const NAV_GROUPS=[
  {label:"HOME",items:[["/","Overview"]]},
- {label:"COST WORKFLOW",items:[["/ingredients","Ingredients"],["/purchase-prices","Purchase Prices"],["/prepared-components","Bulk Recipes"],["/menu-costing","Menu Costing"]]},
+ {label:"COST WORKFLOW",items:[["/ingredients","Ingredients"],["/purchase-prices","Purchase Prices"],["/prepared-components","Bulk Recipes"],["/packaging","Packaging"],["/menu-costing","Menu Costing"]]},
  {label:"INSIGHTS",items:[["/cost-analysis","Cost Analysis"]]},
  {label:"MANAGE",items:[["/categories","Categories"],["/settings","Settings"]]}
 ];
