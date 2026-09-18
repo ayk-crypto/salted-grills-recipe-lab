@@ -1,73 +1,88 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
 import "./settings/settings.css";
 
-const NAV=[['/','Overview'],['/ingredients','Ingredients'],['/purchase-prices','Purchase Prices'],['/prepared-components','Bulk Recipes'],['/menu-costing','Menu Costing'],['/cost-analysis','Cost Analysis'],['/categories','Categories'],['/settings','Settings']];
+const NAV_GROUPS=[
+ {label:"HOME",items:[["/","Overview"]]},
+ {label:"COST WORKFLOW",items:[["/ingredients","Ingredients"],["/purchase-prices","Purchase Prices"],["/prepared-components","Bulk Recipes"],["/menu-costing","Menu Costing"]]},
+ {label:"INSIGHTS",items:[["/cost-analysis","Cost Analysis"]]},
+ {label:"MANAGE",items:[["/categories","Categories"],["/settings","Settings"]]}
+];
+const blankModel={currency:"PKR",tax_enabled:false,tax_rate:0,prices_include_tax:true,payment_fee_pct:0,delivery_commission_pct:0,other_variable_pct:0,packaging_per_order:0,monthly_overheads:[],monthly_sales_basis:0,allocation_method:"revenue"};
+const money=n=>Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+const inferUnit=item=>{const u=String(item?.issueUnit||item?.unit||"").toLowerCase();if(["kg","g","gm","gram","grams"].includes(u))return"g";if(["l","ltr","litre","liter","ml"].includes(u))return"ml";if(["pc","pcs","piece","pieces","each"].includes(u))return"pc";return""};
 
 export default function SettingsPage(){
-  const router=useRouter();
-  const [tab,setTab]=useState('workspace');
-  const [state,setState]=useState({loading:true,error:'',connected:false,tenant:null,integration:null,mappings:[],items:[]});
-  const [form,setForm]=useState({base_url:'https://shelfsense-0qgb.onrender.com',token:''});
-  const [busy,setBusy]=useState(false);
-  const [notice,setNotice]=useState('');
+ const router=useRouter();
+ const [tab,setTab]=useState("workspace"),[navOpen,setNavOpen]=useState(false);
+ const [state,setState]=useState({loading:true,error:"",connected:false,tenant:null,integration:null,mappings:[],items:[]});
+ const [form,setForm]=useState({base_url:"https://shelfsense-0qgb.onrender.com",token:""}),[busy,setBusy]=useState(false),[notice,setNotice]=useState("");
+ const [model,setModel]=useState(blankModel),[modelBusy,setModelBusy]=useState(false);
+ const [reconQ,setReconQ]=useState(""),[reconView,setReconView]=useState("unmapped"),[selected,setSelected]=useState({}),[units,setUnits]=useState({}),[reconBusy,setReconBusy]=useState(false);
 
-  async function load(){
-    setState(s=>({...s,loading:true,error:''}));
-    try{
-      const r=await fetch('/api/integrations/shelfsense',{cache:'no-store'}),j=await r.json();
-      if(!r.ok)throw new Error(j.error||'Could not load settings');
-      setState({loading:false,error:'',connected:Boolean(j.connected),tenant:j.tenant||null,integration:j.integration||null,mappings:j.mappings||[],items:j.items||[]});
-    }catch(e){setState(s=>({...s,loading:false,error:e.message}))}
-  }
-  useEffect(()=>{load()},[]);
+ async function load(){
+  setState(s=>({...s,loading:true,error:""}));
+  try{
+   const [ir,cr]=await Promise.all([fetch("/api/integrations/shelfsense",{cache:"no-store"}),fetch("/api/cost-model",{cache:"no-store"})]);
+   const [i,c]=await Promise.all([ir.json(),cr.json()]);
+   if(!ir.ok)throw new Error(i.error||"Could not load settings");
+   if(!cr.ok)throw new Error(c.error||"Could not load cost model");
+   setState({loading:false,error:"",connected:Boolean(i.connected),tenant:i.tenant||null,integration:i.integration||null,mappings:i.mappings||[],items:i.items||[]});
+   setModel({...blankModel,...(c.model||{})});
+   const suggested={};for(const item of i.items||[])suggested[item.id]=inferUnit(item);setUnits(suggested);
+  }catch(e){setState(s=>({...s,loading:false,error:e.message}))}
+ }
+ useEffect(()=>{load()},[]);
+ useEffect(()=>{document.body.classList.toggle("v2-nav-open",navOpen);return()=>document.body.classList.remove("v2-nav-open")},[navOpen]);
 
-  async function connect(e){
-    e.preventDefault();setBusy(true);setNotice('');
-    try{
-      const r=await fetch('/api/integrations/shelfsense',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)}),j=await r.json();
-      if(!r.ok)throw new Error(j.error||'Connection failed');
-      setForm(x=>({...x,token:''}));setNotice(`ShelfSense connected. ${j.itemCount||0} items available.`);await load();
-    }catch(e){setNotice(e.message)}finally{setBusy(false)}
-  }
-  async function disconnect(){
-    if(!window.confirm('Disconnect ShelfSense from this workspace? Existing historical prices will remain in PlateCost.'))return;
-    setBusy(true);setNotice('');
-    try{
-      const r=await fetch('/api/integrations/shelfsense',{method:'DELETE'}),j=await r.json();
-      if(!r.ok)throw new Error(j.error||'Could not disconnect');
-      setNotice('ShelfSense disconnected.');await load();
-    }catch(e){setNotice(e.message)}finally{setBusy(false)}
-  }
+ async function connect(e){e.preventDefault();setBusy(true);setNotice("");try{const r=await fetch("/api/integrations/shelfsense",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)}),j=await r.json();if(!r.ok)throw new Error(j.error||"Connection failed");setForm(x=>({...x,token:""}));setNotice("ShelfSense connected. "+(j.itemCount||0)+" items available.");await load()}catch(e){setNotice(e.message)}finally{setBusy(false)}}
+ async function disconnect(){if(!window.confirm("Disconnect ShelfSense from this workspace? Existing historical prices will remain in PlateCost."))return;setBusy(true);try{const r=await fetch("/api/integrations/shelfsense",{method:"DELETE"}),j=await r.json();if(!r.ok)throw new Error(j.error||"Could not disconnect");setNotice("ShelfSense disconnected.");await load()}catch(e){setNotice(e.message)}finally{setBusy(false)}}
+ async function saveCostModel(e){e.preventDefault();setModelBusy(true);setNotice("");try{const r=await fetch("/api/cost-model",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(model)}),j=await r.json();if(!r.ok)throw new Error(j.error||"Could not save cost model");setModel(j.model);setNotice("Cost model saved for this workspace.")}catch(e){setNotice(e.message)}finally{setModelBusy(false)}}
+ function addOverhead(){setModel(m=>({...m,monthly_overheads:[...(m.monthly_overheads||[]),{id:crypto.randomUUID?.()||String(Date.now()),name:"",amount:0}]}))}
+ function updateOverhead(id,key,value){setModel(m=>({...m,monthly_overheads:(m.monthly_overheads||[]).map(x=>x.id===id?{...x,[key]:value}:x)}))}
+ function removeOverhead(id){setModel(m=>({...m,monthly_overheads:(m.monthly_overheads||[]).filter(x=>x.id!==id)}))}
+ const totalOverhead=(model.monthly_overheads||[]).reduce((s,x)=>s+Number(x.amount||0),0),overheadPct=Number(model.monthly_sales_basis)>0?totalOverhead/Number(model.monthly_sales_basis)*100:0;
+ const mappedIds=useMemo(()=>new Set((state.mappings||[]).filter(x=>x.source_type==="shelfsense").map(x=>String(x.external_item_id))),[state.mappings]);
+ const remoteRows=useMemo(()=>{const q=reconQ.trim().toLowerCase();return(state.items||[]).filter(x=>!q||((x.name||"")+" "+(x.category||"")+" "+(x.unit||"")).toLowerCase().includes(q)).filter(x=>reconView==="all"||!mappedIds.has(String(x.id)))},[state.items,reconQ,reconView,mappedIds]);
+ const selectedCount=Object.values(selected).filter(Boolean).length;
+ function toggleItem(item){setSelected(s=>({...s,[item.id]:!s[item.id]}))}
+ async function addSelected(){const items=(state.items||[]).filter(x=>selected[x.id]).map(x=>({external_item_id:x.id,kitchen_unit:units[x.id]||""}));if(!items.length)return;const missing=items.filter(x=>!x.kitchen_unit);if(missing.length)return setNotice("Choose a recipe unit for every selected ShelfSense item.");setReconBusy(true);setNotice("");try{const r=await fetch("/api/integrations/shelfsense/mappings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"bulk_add",items})}),j=await r.json();if(!r.ok)throw new Error(j.error||"Could not add items");setNotice((j.mapped||0)+" ShelfSense item(s) added/mapped to PlateCost.");setSelected({});await load()}catch(e){setNotice(e.message)}finally{setReconBusy(false)}}
 
-  const tenantName=state.tenant?.name||'Current Workspace';
-  return <div className="v2-shell settings-shell">
-    <aside className="v2-side"><div className="brand"><div className="product-mark">PC</div><b className="product-name">PLATECOST</b><span className="product-tagline">RESTAURANT COST CONTROL</span><section className="workspace-switch"><small>WORKSPACE</small><strong>{tenantName}</strong></section></div><nav>{NAV.map(([href,label])=><button key={href} className={href==='/settings'?'active':''} onClick={()=>router.push(href)}>{label}</button>)}</nav><footer><b>PlateCost</b><span>Restaurant costing</span></footer></aside>
-    <div className="v2-work"><main className="v2-main settings-main">
-      <div className="v2-head"><div><span>PLATECOST ADMINISTRATION</span><h1>Settings</h1><p>Manage this workspace, users and external integrations.</p></div></div>
-      <div className="settings-tabs"><button className={tab==='workspace'?'active':''} onClick={()=>setTab('workspace')}>Workspace</button><button className={tab==='users'?'active':''} onClick={()=>setTab('users')}>Users</button><button className={tab==='integrations'?'active':''} onClick={()=>setTab('integrations')}>Integrations & APIs</button></div>
-      {state.error&&<div className="settings-alert bad">{state.error}</div>}{notice&&<div className="settings-alert">{notice}</div>}
+ const tenantName=state.tenant?.name||"Current Workspace";
+ return <div className="v2-shell settings-shell">
+  <div className="v2-mobile-bar"><button type="button" className="v2-menu-toggle" aria-label={navOpen?"Close menu":"Open menu"} aria-expanded={navOpen} onClick={()=>setNavOpen(v=>!v)}><span></span><span></span><span></span></button><div><b>PlateCost</b><span>Settings</span></div></div>
+  <button type="button" className={"v2-nav-backdrop "+(navOpen?"show":"")} onClick={()=>setNavOpen(false)} aria-label="Close menu"/>
+  <aside className={"v2-side "+(navOpen?"mobile-open":"")}><div className="brand"><div className="product-mark">PC</div><b className="product-name">PLATECOST</b><span className="product-tagline">RESTAURANT COST CONTROL</span><section className="workspace-switch"><small>WORKSPACE</small><strong>{tenantName}</strong></section></div><nav>{NAV_GROUPS.map(g=><div className="v2-nav-group" data-nav-group={g.label.toLowerCase().replace(/\s+/g,"-")} key={g.label}><div className="v2-nav-group-title">{g.label}</div>{g.items.map(([href,label])=><button key={href} className={href==="/settings"?"active":""} onClick={()=>{setNavOpen(false);router.push(href)}}>{label}</button>)}</div>)}</nav><footer><b>PlateCost</b><span>Restaurant costing</span></footer></aside>
+  <div className="v2-work"><main className="v2-main settings-main">
+   <div className="v2-head"><div><span>PLATECOST ADMINISTRATION</span><h1>Settings</h1><p>Manage workspace-wide costing rules, users and integrations.</p></div></div>
+   <div className="settings-tabs"><button className={tab==="workspace"?"active":""} onClick={()=>setTab("workspace")}>Workspace</button><button className={tab==="cost"?"active":""} onClick={()=>setTab("cost")}>Cost Model</button><button className={tab==="users"?"active":""} onClick={()=>setTab("users")}>Users</button><button className={tab==="integrations"?"active":""} onClick={()=>setTab("integrations")}>Integrations & APIs</button></div>
+   {state.error&&<div className="settings-alert bad">{state.error}</div>}{notice&&<div className="settings-alert">{notice}</div>}
 
-      {tab==='workspace'&&<section className="settings-grid">
-        <article className="settings-card"><span>WORKSPACE</span><h2>{tenantName}</h2><p>This is the active PlateCost workspace. All ingredients, prices, recipes, mappings and integrations are scoped to this workspace.</p><dl><div><dt>Status</dt><dd>Active</dd></div><div><dt>Workspace ID</dt><dd>{state.tenant?.id||'Loading…'}</dd></div></dl></article>
-        <article className="settings-card"><span>SAAS READINESS</span><h2>Workspace isolation is enabled</h2><p>PlateCost already resolves data through the active workspace and stores ShelfSense integration credentials per workspace.</p><div className="settings-note">Authentication and role enforcement should be the next platform layer before multiple restaurant companies are onboarded.</div></article>
-      </section>}
+   {tab==="workspace"&&<section className="settings-grid">
+    <article className="settings-card"><span>WORKSPACE</span><h2>{tenantName}</h2><p>All ingredient, recipe, cost-model and integration data is isolated to this workspace.</p><dl><div><dt>Status</dt><dd>Active</dd></div><div><dt>Workspace ID</dt><dd>{state.tenant?.id||"Loading…"}</dd></div></dl></article>
+    <article className="settings-card"><span>SAAS MODEL</span><h2>Workspace-scoped configuration</h2><p>Each PlateCost customer can maintain their own tax rules, overhead structure, ShelfSense connection and ingredient mappings.</p><div className="settings-note">Authentication and role enforcement remain the next platform layer before public multi-customer onboarding.</div></article>
+   </section>}
 
-      {tab==='users'&&<section className="settings-grid">
-        <article className="settings-card wide"><span>USER MANAGEMENT</span><div className="settings-card-head"><div><h2>Workspace users</h2><p>Manage who can access PlateCost and what they are allowed to change.</p></div><button className="primary" disabled title="Enable authentication first">+ Invite User</button></div>
-          <div className="settings-user-row"><div className="settings-avatar">A</div><div><b>Workspace Owner</b><small>Current workspace deployment</small></div><span className="settings-role">Owner</span><span className="settings-status">Active</span></div>
-          <div className="settings-note">The settings surface is ready, but real user invitations and permission enforcement are intentionally not faked here. The current deployment still resolves a configured default workspace rather than a signed-in user session. The next SaaS step is authentication plus Owner / Admin / Manager / Viewer roles.</div>
-        </article>
-      </section>}
+   {tab==="cost"&&<form className="settings-grid cost-model-grid" onSubmit={saveCostModel}>
+    <article className="settings-card"><span>SALES & TAX</span><h2>How menu prices are treated</h2><p>Keep tax separate from recipe cost so PlateCost can calculate contribution from net sales value.</p><div className="settings-form-grid"><label>Currency<input value={model.currency||"PKR"} onChange={e=>setModel({...model,currency:e.target.value})}/></label><label className="switch-line"><input type="checkbox" checked={Boolean(model.tax_enabled)} onChange={e=>setModel({...model,tax_enabled:e.target.checked})}/><span>Tax enabled</span></label><label>Tax rate %<input type="number" min="0" max="100" step="0.01" value={model.tax_rate} onChange={e=>setModel({...model,tax_rate:e.target.value})} disabled={!model.tax_enabled}/></label><label className="switch-line"><input type="checkbox" checked={Boolean(model.prices_include_tax)} onChange={e=>setModel({...model,prices_include_tax:e.target.checked})}/><span>Selling prices include tax</span></label></div></article>
+    <article className="settings-card"><span>VARIABLE SELLING COSTS</span><h2>Costs applied to every sale</h2><p>Use workspace defaults now. Channel-specific costs can be added later without changing the recipe model.</p><div className="settings-form-grid"><label>Payment / card fee %<input type="number" min="0" max="100" step="0.01" value={model.payment_fee_pct} onChange={e=>setModel({...model,payment_fee_pct:e.target.value})}/></label><label>Delivery / commission %<input type="number" min="0" max="100" step="0.01" value={model.delivery_commission_pct} onChange={e=>setModel({...model,delivery_commission_pct:e.target.value})}/></label><label>Other variable cost %<input type="number" min="0" max="100" step="0.01" value={model.other_variable_pct} onChange={e=>setModel({...model,other_variable_pct:e.target.value})}/></label><label>Packaging per order<input type="number" min="0" step="0.01" value={model.packaging_per_order} onChange={e=>setModel({...model,packaging_per_order:e.target.value})}/></label></div></article>
+    <article className="settings-card wide"><span>MONTHLY OPERATING COSTS</span><div className="settings-card-head"><div><h2>Fixed overhead</h2><p>Rent, salaries, utilities and other recurring costs are configured once for the workspace — not item by item.</p></div><button type="button" className="ghost" onClick={addOverhead}>+ Add cost</button></div><div className="overhead-list">{(model.monthly_overheads||[]).map(x=><div key={x.id}><input placeholder="e.g. Salaries" value={x.name} onChange={e=>updateOverhead(x.id,"name",e.target.value)}/><input type="number" min="0" step="0.01" placeholder="Monthly amount" value={x.amount} onChange={e=>updateOverhead(x.id,"amount",e.target.value)}/><button type="button" onClick={()=>removeOverhead(x.id)}>×</button></div>)}{!(model.monthly_overheads||[]).length&&<div className="settings-empty">Add monthly rent, salaries, utilities and other fixed overheads.</div>}</div><div className="cost-model-summary"><div><small>TOTAL MONTHLY OVERHEAD</small><b>Rs {money(totalOverhead)}</b></div><div><small>MONTHLY SALES BASIS</small><label><input type="number" min="0" step="1" value={model.monthly_sales_basis} onChange={e=>setModel({...model,monthly_sales_basis:e.target.value})} placeholder="Expected / actual monthly sales"/></label></div><div><small>OVERHEAD BURDEN</small><b>{overheadPct.toFixed(1)}%</b><span>allocated by revenue</span></div></div></article>
+    <article className="settings-card wide cost-save-bar"><div><b>PlateCost keeps recipe cost separate from business overhead.</b><p>Menu profitability will use net selling price − recipe cost − variable selling costs − allocated overhead.</p></div><button className="primary" disabled={modelBusy}>{modelBusy?"Saving…":"Save Cost Model"}</button></article>
+   </form>}
 
-      {tab==='integrations'&&<section className="settings-grid">
-        <article className="settings-card wide"><span>INTEGRATIONS & APIS</span><div className="settings-card-head"><div><h2>ShelfSense</h2><p>Inventory purchasing data source for ingredient price history and costing review.</p></div><div className={`connection-pill ${state.connected?'connected':''}`}>{state.loading?'Checking…':state.connected?'Connected':'Not connected'}</div></div>
-          {state.connected?<div className="integration-details"><dl><div><dt>External workspace</dt><dd>{state.integration?.externalTenantId||'—'}</dd></div><div><dt>Mapped ingredients</dt><dd>{state.mappings.length}</dd></div><div><dt>Available items</dt><dd>{state.items.length}</dd></div><div><dt>Last sync</dt><dd>{state.integration?.lastSyncAt?new Date(state.integration.lastSyncAt).toLocaleString():'Not yet synced'}</dd></div><div><dt>Last status</dt><dd>{state.integration?.lastSyncStatus||'Connected'}</dd></div></dl><div className="settings-actions"><button className="ghost" onClick={()=>router.push('/purchase-prices')}>Open Price Sync</button><button className="danger" disabled={busy} onClick={disconnect}>Disconnect</button></div></div>
-          :<form className="integration-form" onSubmit={connect}><label>API Base URL<input value={form.base_url} onChange={e=>setForm({...form,base_url:e.target.value})} placeholder="https://..." required/></label><label>Connection Token<input type="password" value={form.token} onChange={e=>setForm({...form,token:e.target.value})} placeholder="Paste ShelfSense integration token" required/></label><button className="primary" disabled={busy}>{busy?'Connecting…':'Connect ShelfSense'}</button><small>The token is validated against ShelfSense before it is stored encrypted for this workspace.</small></form>}
-        </article>
-        <article className="settings-card"><span>API MANAGEMENT</span><h2>Connection-first design</h2><p>External systems belong here instead of inside operational pages. PlateCost pages should consume approved integrations, not expose credentials.</p><div className="settings-note">Next integrations can follow the same pattern: provider, connection status, credential storage, mappings, last sync and disconnect controls.</div></article>
-      </section>}
-    </main></div>
-  </div>;
+   {tab==="users"&&<section className="settings-grid"><article className="settings-card wide"><span>USER MANAGEMENT</span><div className="settings-card-head"><div><h2>Workspace users</h2><p>Manage who can access PlateCost and what they are allowed to change.</p></div><button className="primary" disabled title="Enable authentication first">+ Invite User</button></div><div className="settings-user-row"><div className="settings-avatar">A</div><div><b>Workspace Owner</b><small>Current workspace deployment</small></div><span className="settings-role">Owner</span><span className="settings-status">Active</span></div><div className="settings-note">Real invitations and permission enforcement will be enabled with the authentication/RBAC phase.</div></article></section>}
+
+   {tab==="integrations"&&<section className="settings-grid">
+    <article className="settings-card wide"><span>INTEGRATIONS & APIS</span><div className="settings-card-head"><div><h2>ShelfSense</h2><p>Inventory purchasing and storage-cost source for PlateCost.</p></div><div className={"connection-pill "+(state.connected?"connected":"")}>{state.loading?"Checking…":state.connected?"Connected":"Not connected"}</div></div>
+     {state.connected?<div className="integration-details"><dl><div><dt>External workspace</dt><dd>{state.integration?.externalTenantId||"—"}</dd></div><div><dt>Mapped ingredients</dt><dd>{state.mappings.filter(x=>x.source_type==="shelfsense").length}</dd></div><div><dt>ShelfSense items</dt><dd>{state.items.length}</dd></div><div><dt>Unmapped items</dt><dd>{state.items.filter(x=>!mappedIds.has(String(x.id))).length}</dd></div><div><dt>Last sync</dt><dd>{state.integration?.lastSyncAt?new Date(state.integration.lastSyncAt).toLocaleString():"Not yet synced"}</dd></div><div><dt>Last status</dt><dd>{state.integration?.lastSyncStatus||"Connected"}</dd></div></dl><div className="settings-actions"><button className="ghost" onClick={()=>router.push("/purchase-prices")}>Open Price Sync</button><button className="danger" disabled={busy} onClick={disconnect}>Disconnect</button></div></div>
+     :<form className="integration-form" onSubmit={connect}><label>API Base URL<input value={form.base_url} onChange={e=>setForm({...form,base_url:e.target.value})} required/></label><label>Connection Token<input type="password" value={form.token} onChange={e=>setForm({...form,token:e.target.value})} required/></label><button className="primary" disabled={busy}>{busy?"Connecting…":"Connect ShelfSense"}</button><small>The token is validated before encrypted workspace storage.</small></form>}
+    </article>
+    {state.connected&&<article className="settings-card wide reconciliation-card"><span>ITEM RECONCILIATION</span><div className="settings-card-head"><div><h2>Choose what belongs in PlateCost</h2><p>ShelfSense may contain food, packaging, cleaning and admin stock. Tick only the items you want available for recipe costing.</p></div><button className="primary" disabled={!selectedCount||reconBusy} onClick={addSelected}>{reconBusy?"Adding…":"Add Selected ("+selectedCount+")"}</button></div>
+     <div className="recon-toolbar"><input placeholder="Search ShelfSense items…" value={reconQ} onChange={e=>setReconQ(e.target.value)}/><div><button className={reconView==="unmapped"?"active":""} onClick={()=>setReconView("unmapped")}>Unmapped</button><button className={reconView==="all"?"active":""} onClick={()=>setReconView("all")}>All items</button></div></div>
+     <div className="recon-table"><div className="recon-row head"><span></span><span>Item</span><span>Category</span><span>ShelfSense Unit</span><span>Recipe Unit</span><span>Status</span></div>{remoteRows.map(item=>{const mapped=mappedIds.has(String(item.id));return <div className="recon-row" key={item.id}><span><input type="checkbox" disabled={mapped} checked={Boolean(selected[item.id])} onChange={()=>toggleItem(item)}/></span><span><b>{item.name}</b></span><span>{item.category||"Uncategorized"}</span><span>{item.purchaseUnit||item.unit||"—"} → {item.unit||"—"}</span><span><select disabled={mapped} value={units[item.id]||""} onChange={e=>setUnits(u=>({...u,[item.id]:e.target.value}))}><option value="">Choose…</option><option value="g">g</option><option value="ml">ml</option><option value="pc">pc</option><option value="kg">kg</option><option value="L">L</option></select></span><span className={mapped?"mapped":"available"}>{mapped?"In PlateCost":"Available"}</span></div>)}</div>
+    </article>}
+   </section>}
+  </main></div>
+ </div>
 }
