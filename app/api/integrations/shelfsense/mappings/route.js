@@ -58,11 +58,13 @@ export async function POST(req){
         }
         const [already]=await sql`SELECT ingredient_id FROM ingredient_source_mappings WHERE tenant_id=${tenant.id} AND integration_id=${integration.id} AND external_item_id=${externalId} AND is_active=TRUE LIMIT 1`;
         if(already){skipped++;results.push({externalId,name:item.name,status:'skipped',reason:'Already mapped'});continue}
-        let [ingredient]=await sql`SELECT id,name,default_unit FROM ingredients WHERE tenant_id=${tenant.id} AND lower(name)=lower(${item.name}) LIMIT 1`;
+        let [ingredient]=await sql`SELECT id,name,default_unit,is_active FROM ingredients WHERE tenant_id=${tenant.id} AND lower(name)=lower(${item.name}) LIMIT 1`;
         let wasCreated=false;
         if(!ingredient){
-          [ingredient]=await sql`INSERT INTO ingredients(tenant_id,name,default_unit,ingredient_type,notes,is_active) VALUES(${tenant.id},${item.name},${kitchenUnit},'raw','Added from ShelfSense reconciliation',TRUE) RETURNING id,name,default_unit`;
+          [ingredient]=await sql`INSERT INTO ingredients(tenant_id,name,default_unit,ingredient_type,notes,is_active) VALUES(${tenant.id},${item.name},${kitchenUnit},'raw','Added from ShelfSense import',TRUE) RETURNING id,name,default_unit,is_active`;
           created++;wasCreated=true;
+        }else if(!ingredient.is_active){
+          [ingredient]=await sql`UPDATE ingredients SET is_active=TRUE,default_unit=${kitchenUnit},notes=COALESCE(notes,'Re-imported from ShelfSense'),updated_at=NOW() WHERE id=${ingredient.id} AND tenant_id=${tenant.id} RETURNING id,name,default_unit,is_active`;
         }
         await sql`
           INSERT INTO ingredient_source_mappings
