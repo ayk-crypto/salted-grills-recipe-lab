@@ -42,7 +42,7 @@ export default function SearchFilters(){
   },[open]);
   useEffect(()=>{
     if(!cfg)return;let raf=0;
-    const findHost=()=>{const toolbar=[...document.querySelectorAll('.v2-toolbar')].find(x=>x.querySelector('input[placeholder*="Search"],input[placeholder*="search"]'));if(!toolbar){setHost(null);return}let node=toolbar.querySelector(':scope > .global-filter-host');if(!node){node=document.createElement('div');node.className='global-filter-host';const count=toolbar.querySelector('b');if(count)toolbar.insertBefore(node,count);else toolbar.appendChild(node)}setHost(prev=>prev===node?prev:node)};
+    const findHost=()=>{const toolbar=[...document.querySelectorAll('.v2-toolbar')].find(x=>x.querySelector('input[placeholder*="Search"],input[placeholder*="search"]'));if(!toolbar){setHost(null);return}let node=toolbar.querySelector(':scope > .global-filter-host');if(!node){node=document.createElement('div');node.className='global-filter-host';const count=toolbar.querySelector('b'),direct=count?.parentElement===toolbar?count:null;if(direct)toolbar.insertBefore(node,direct);else{const actions=toolbar.querySelector(':scope > div');if(actions&&actions.parentElement===toolbar)toolbar.insertBefore(node,actions);else toolbar.appendChild(node)}}setHost(prev=>prev===node?prev:node)};
     findHost();const mo=new MutationObserver(()=>{if(!raf)raf=requestAnimationFrame(()=>{raf=0;findHost();setTick(x=>x+1)})});mo.observe(document.body,{subtree:true,childList:true});return()=>{mo.disconnect();cancelAnimationFrame(raf)};
   },[cfg,path]);
   useEffect(()=>{
