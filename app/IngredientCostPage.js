@@ -50,6 +50,28 @@ export default function IngredientCostPage(){
  async function saveIngredient(e){e.preventDefault();const b=Object.fromEntries(new FormData(e.currentTarget));if(editItem?.id)b.id=editItem.id;const res=await fetch('/api/ingredients',{method:editItem?.id?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const j=await res.json();if(!res.ok)return setNotice(j.error||'Could not save');setEditItem(null);setNotice(editItem?.id?'Ingredient updated':'Ingredient added');await load()}
  async function remove(r){if(!window.confirm(`Delete ${r.name}?`))return;const res=await fetch('/api/ingredients',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:r.id})});const j=await res.json();if(!res.ok)return setNotice(j.error||'Could not delete');setNotice('Ingredient deleted');await load()}
  async function downloadTemplate(){const XLSX=await import('xlsx');const rows=(data.ingredients||[]).map(i=>({'Ingredient Name':i.name,'Default Unit':i.default_unit||'g','Type':i.ingredient_type||'raw','Notes':i.notes||''}));rows.push({'Ingredient Name':'','Default Unit':'g','Type':'raw','Notes':''});const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Ingredients');XLSX.writeFile(wb,'PlateCost-Ingredients.xlsx')}
+ async function exportIngredients(){const XLSX=await import('xlsx');const exportRows=visible.map(r=>({
+   'Ingredient':r.name,
+   'Type':r.type,
+   'Recipe Unit':r.defaultUnit,
+   'Purchase Price':Number.isFinite(r.purchasePrice)?r.purchasePrice:'',
+   'Purchase Quantity':Number.isFinite(r.purchaseQty)?r.purchaseQty:'',
+   'Purchase Unit':r.purchaseUnit||'',
+   'Purchase Date':r.date||'',
+   'Supplier':r.supplier||'',
+   'Source':r.source||'',
+   'Storage Unit':r.storageUnit||'',
+   'Storage Unit Cost':Number.isFinite(r.storageCost)?r.storageCost:'',
+   'Yield Status':r.isDirect?'Direct':r.conv?'Configured':r.needsYield?'Needs yield':'Not available',
+   'Yield Source Unit':r.conv?.purchase_unit||r.storageUnit||'',
+   'Usable Yield Qty':r.conv?.usable_quantity??'',
+   'Yield Unit':r.conv?.costing_unit||'',
+   'Kitchen Unit Cost':Number.isFinite(r.finalCost)?r.finalCost:'',
+   'Kitchen Cost Unit':r.finalUnit||'',
+   'Used In Recipes':r.used,
+   'Flagged':r.isFlagged?'Yes':'No',
+   'Cost Status':r.ready?'Ready':r.needsYield?'Needs yield':'No source cost'
+ }));const ws=XLSX.utils.json_to_sheet(exportRows),wb=XLSX.utils.book_new();ws['!cols']=[{wch:28},{wch:12},{wch:12},{wch:14},{wch:16},{wch:14},{wch:14},{wch:20},{wch:12},{wch:14},{wch:18},{wch:16},{wch:18},{wch:18},{wch:14},{wch:18},{wch:16},{wch:14},{wch:10},{wch:16}];XLSX.utils.book_append_sheet(wb,ws,'Ingredients');const stamp=new Date().toISOString().slice(0,10),viewLabel=view==='all'?'All':view==='yield'?'Needs-Yield':view==='ready'?'Cost-Ready':view==='missing'?'No-Source-Cost':view==='flagged'?'Flagged':'Filtered';XLSX.writeFile(wb,`PlateCost-Ingredients-${viewLabel}-${stamp}.xlsx`)}
  async function importIngredients(file){const XLSX=await import('xlsx');const wb=XLSX.read(await file.arrayBuffer()),ws=wb.Sheets[wb.SheetNames[0]],raw=XLSX.utils.sheet_to_json(ws,{defval:''});const rows=raw.map(r=>({name:r['Ingredient Name']||r.name,default_unit:r['Default Unit']||r.default_unit||'g',ingredient_type:r['Type']||r.type||'raw',notes:r['Notes']||r.notes||''})).filter(r=>String(r.name||'').trim());if(!rows.length)return setNotice('No ingredients found in file');if(!window.confirm(`Import ${rows.length} ingredient rows? Existing names will be updated.`))return;const res=await fetch('/api/ingredients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})}),j=await res.json();if(!res.ok)return setNotice(j.error||'Import failed');setNotice(`${j.created||0} added, ${j.updated||0} updated`);await load()}
  const workspace=data.tenant?.name||'Workspace';
  return <div className="v2-shell ingredient-cost-shell">
@@ -62,7 +84,7 @@ export default function IngredientCostPage(){
    <footer><b>PlateCost</b><span>Restaurant costing</span></footer>
  </aside>
  <div className="v2-work"><main className="v2-main ingredient-cost-main">
-   <div className="v2-head"><div><span>COST PIPELINE</span><h1>Ingredients</h1><p>ShelfSense supplies purchase and storage cost. PlateCost applies usable yield and calculates the kitchen unit cost used in recipes.</p></div><div className="v2-actions"><button className="ghost" onClick={downloadTemplate}>Download Template</button><label className="ghost file">Import Ingredients<input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files?.[0]&&importIngredients(e.target.files[0])}/></label><button className="primary" onClick={()=>setEditItem({})}>+ Add Ingredient</button></div></div>
+   <div className="v2-head"><div><span>COST PIPELINE</span><h1>Ingredients</h1><p>ShelfSense supplies purchase and storage cost. PlateCost applies usable yield and calculates the kitchen unit cost used in recipes.</p></div><div className="v2-actions"><button className="ghost" onClick={exportIngredients}>Export Excel</button><button className="ghost" onClick={downloadTemplate}>Download Template</button><label className="ghost file">Import Ingredients<input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files?.[0]&&importIngredients(e.target.files[0])}/></label><button className="primary" onClick={()=>setEditItem({})}>+ Add Ingredient</button></div></div>
    <div className="cost-flow"><div><small>1 · SOURCE</small><b>ShelfSense</b><span>Purchase + storage cost</span></div><i>→</i><div><small>2 · PLATECOST</small><b>Usable Yield</b><span>Waste / drained / usable qty</span></div><i>→</i><div><small>3 · RESULT</small><b>Kitchen Unit Cost</b><span>Rs/g · Rs/ml · Rs/pc</span></div></div>
    <div className="ingredient-status"><button className={view==='all'?'active':''} onClick={()=>setView('all')}>All <b>{counts.all}</b></button><button className={view==='yield'?'active':''} onClick={()=>setView('yield')}>Needs yield <b>{counts.yield}</b></button><button className={view==='ready'?'active':''} onClick={()=>setView('ready')}>Cost ready <b>{counts.ready}</b></button><button className={view==='missing'?'active':''} onClick={()=>setView('missing')}>No source cost <b>{counts.missing}</b></button><button className={view==='flagged'?'active':''} onClick={()=>setView('flagged')}>Flagged <b>{counts.flagged}</b></button></div>
    <div className="v2-toolbar"><input placeholder="Search ingredients..." value={q} onChange={e=>setQ(e.target.value)}/><b>{visible.length} shown</b></div>
