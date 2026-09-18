@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS workspace_cost_models (
+  tenant_id UUID PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  currency TEXT NOT NULL DEFAULT 'PKR',
+  tax_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  tax_rate NUMERIC NOT NULL DEFAULT 0,
+  prices_include_tax BOOLEAN NOT NULL DEFAULT TRUE,
+  payment_fee_pct NUMERIC NOT NULL DEFAULT 0,
+  delivery_commission_pct NUMERIC NOT NULL DEFAULT 0,
+  other_variable_pct NUMERIC NOT NULL DEFAULT 0,
+  packaging_per_order NUMERIC NOT NULL DEFAULT 0,
+  monthly_overheads JSONB NOT NULL DEFAULT '[]'::jsonb,
+  monthly_sales_basis NUMERIC NOT NULL DEFAULT 0,
+  allocation_method TEXT NOT NULL DEFAULT 'revenue',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (tax_rate >= 0),
+  CHECK (payment_fee_pct >= 0),
+  CHECK (delivery_commission_pct >= 0),
+  CHECK (other_variable_pct >= 0),
+  CHECK (packaging_per_order >= 0),
+  CHECK (monthly_sales_basis >= 0),
+  CHECK (allocation_method IN ('revenue'))
+);
