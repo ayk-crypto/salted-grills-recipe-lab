@@ -12,12 +12,12 @@ function cx(...a){return a.filter(Boolean).join(' ')}
 
 export default function CostControlApp(){
  const router=useRouter(),path=usePathname()||'/';
- const [data,setData]=useState({ingredients:[],categories:[],recipes:[],units:[],prices:[]});
+ const [data,setData]=useState({ingredients:[],categories:[],recipes:[],units:[],prices:[]}),[snapshots,setSnapshots]=useState([]);
  const [loading,setLoading]=useState(true),[q,setQ]=useState(''),[modal,setModal]=useState(null),[toast,setToast]=useState('');
  const [editor,setEditor]=useState(null),[saving,setSaving]=useState(false);
  const ingredients=data.ingredients||[], prepared=(data.recipes||[]).filter(r=>r.recipe_type==='bulk'), menus=(data.recipes||[]).filter(r=>r.recipe_type==='menu');
  const units=[...new Set([...(data.units||[]).map(x=>x.symbol).filter(Boolean),...U])];
- async function load(){setLoading(true);const r=await fetch('/api/bootstrap',{cache:'no-store'});const j=await r.json();if(!j.error)setData(j);setLoading(false)}
+ async function load(){setLoading(true);try{const [r,sr]=await Promise.all([fetch('/api/bootstrap',{cache:'no-store'}),fetch('/api/costing-snapshots',{cache:'no-store'})]);const [j,sj]=await Promise.all([r.json(),sr.json()]);if(!j.error)setData(j);if(!sj.error)setSnapshots(sj.snapshots||[])}finally{setLoading(false)}}
  useEffect(()=>{load()},[]);
  useEffect(()=>{setQ('');setModal(null)},[path]);
  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),2600);return()=>clearTimeout(t)},[toast]);
@@ -61,7 +61,63 @@ export default function CostControlApp(){
 
  function AnalysisPage(){const missing=ingredients.filter(i=>!i.latest_price),changed=ingredients.map(i=>({...i,change:priceChange(i)})).filter(i=>Number.isFinite(i.change)).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)),stats=menus.map(r=>({r,...menuStats(r)})),over=stats.filter(x=>Number.isFinite(x.food)&&x.food>x.target),incomplete=stats.filter(x=>!Number.isFinite(x.cost)||!x.sell);return <><Header title="Cost Analysis" sub="Focus attention on missing prices, cost pressure and menu items that need action."/><div className="kpis"><div><span>Missing Prices</span><b>{missing.length}</b><small>ingredients need purchase cost</small></div><div><span>Over Target</span><b>{over.length}</b><small>menu items above target food cost</small></div><div><span>Incomplete Costing</span><b>{incomplete.length}</b><small>menu items need data</small></div><div><span>Price Changes</span><b>{changed.filter(x=>Math.abs(x.change)>=5).length}</b><small>ingredients moved ≥5%</small></div></div><div className="analysis-grid"><section><h3>Largest ingredient price movements</h3>{changed.slice(0,10).map(i=><div className="analysis-row" key={i.id}><span><b>{i.name}</b><small>{i.latest_price?.supplier||'Latest purchase'}</small></span><strong className={i.change>0?'bad':'good'}>{i.change>0?'+':''}{pct(i.change)}</strong></div>)}{!changed.length&&<Empty>Add at least two prices for an ingredient to see movement.</Empty>}</section><section><h3>Menu items needing attention</h3>{[...over,...incomplete.filter(x=>!over.includes(x))].slice(0,10).map(x=><div className="analysis-row" key={x.r.id}><span><b>{x.r.name}</b><small>{Number.isFinite(x.cost)?`${money(x.cost)} cost`:'Cost incomplete'}</small></span><strong className="bad">{Number.isFinite(x.food)?pct(x.food):'Review'}</strong></div>)}{!over.length&&!incomplete.length&&<Empty>No menu item alerts.</Empty>}</section></div></>}
 
- function Dashboard(){const missing=ingredients.filter(i=>!i.latest_price).length,completeMenus=menus.filter(r=>Number.isFinite(recipeCost(r))).length;return <><Header title="Cost Control Overview" sub="Your weekly workflow: update purchase prices, review cost impact, then adjust menu costing." actions={<button className="primary" onClick={()=>go('prices')}>Update Purchase Prices</button>}/><div className="kpis"><div><span>Ingredients</span><b>{ingredients.length}</b><small>{ingredients.length-missing} priced</small></div><div><span>Missing Prices</span><b>{missing}</b><small>complete these first</small></div><div><span>Prepared Components</span><b>{prepared.length}</b><small>batch-costed items</small></div><div><span>Menu Costing</span><b>{completeMenus}/{menus.length}</b><small>cost sheets complete</small></div></div><div className="workflow"><button onClick={()=>go('ingredients')}><i>1</i><b>Maintain Ingredients</b><span>Add individually or import Excel.</span></button><button onClick={()=>go('prices')}><i>2</i><b>Update Purchase Prices</b><span>Import the latest supplier/purchase costs.</span></button><button onClick={()=>go('prepared')}><i>3</i><b>Cost Prepared Components</b><span>Build reusable batch costs.</span></button><button onClick={()=>go('menu')}><i>4</i><b>Review Menu Costing</b><span>Compare item cost with selling price.</span></button><button onClick={()=>go('analysis')}><i>5</i><b>Analyze Cost Pressure</b><span>See what changed and what needs action.</span></button></div></>}
+ function Dashboard(){
+  const missing=ingredients.filter(i=>!i.latest_price).length;
+  const completeMenus=menus.filter(r=>Number.isFinite(recipeCost(r))).length;
+  const menuRows=menus.map(r=>({r,...menuStats(r)}));
+  const healthy=menuRows.filter(x=>Number.isFinite(x.food)&&x.sell&&x.food<=x.target).length;
+  const watch=menuRows.filter(x=>Number.isFinite(x.food)&&x.sell&&x.food>x.target&&x.food<=x.target+5).length;
+  const critical=menuRows.filter(x=>Number.isFinite(x.food)&&x.sell&&x.food>x.target+5&&x.cost<x.sell).length;
+  const negative=menuRows.filter(x=>Number.isFinite(x.cost)&&x.sell>0&&x.cost>=x.sell).length;
+  const incomplete=Math.max(0,menus.length-healthy-watch-critical-negative);
+  const active=snapshots.find(x=>x.status==='published');
+  const draft=snapshots.find(x=>x.status==='draft');
+  const draftSummary=draft?.summary||{};
+  const movements=ingredients.map(i=>({...i,change:priceChange(i)})).filter(i=>Number.isFinite(i.change)&&Math.abs(i.change)>=.01).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,6);
+  const attention=(Number(draftSummary.needsYield||0)||0)+missing+critical+negative;
+  const dateLabel=v=>v?new Date(v).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'Not published';
+  return <><Header title="Overview" sub="See costing health, ShelfSense changes and what needs attention before you update the menu." actions={<button className="primary" onClick={()=>go('prices')}>Review ShelfSense</button>}/>
+   <div className="overview-status">
+    <div><span>ACTIVE COSTING</span><b>{dateLabel(active?.snapshot_date)}</b><small>{active?'Published and in use':'Using current live costing'}</small></div>
+    <div className={draft?'has-review':''}><span>LATEST REVIEW</span><b>{draft?dateLabel(draft.snapshot_date):'No draft review'}</b><small>{draft?<>{draftSummary.changed||0} price changes · not published</>:'Sync ShelfSense to create a review'}</small></div>
+    <div className={attention?'needs-attention':''}><span>ATTENTION</span><b>{attention}</b><small>{missing} missing price · {critical+negative} menu alerts</small></div>
+    <div><span>MENU COSTING</span><b>{completeMenus}/{menus.length}</b><small>cost sheets complete</small></div>
+   </div>
+
+   <div className="overview-grid">
+    <section className="overview-card overview-attention">
+      <div className="overview-card-head"><div><span>PRIORITY</span><h3>What needs attention</h3></div><button onClick={()=>go('analysis')}>View analysis →</button></div>
+      <div className="attention-list">
+       <button onClick={()=>go('prices')}><i className={missing?'warn':'ok'}>{missing}</i><span><b>Missing purchase prices</b><small>{missing?'Add or sync these before relying on menu cost.':'All ingredients have a price.'}</small></span></button>
+       <button onClick={()=>go('ingredients')}><i className={Number(draftSummary.needsYield||0)?'warn':'ok'}>{Number(draftSummary.needsYield||0)}</i><span><b>Ingredients needing yield</b><small>{Number(draftSummary.needsYield||0)?'Set usable yield for packaged ingredients.':'No pending yield from latest review.'}</small></span></button>
+       <button onClick={()=>go('menu')}><i className={(critical+negative)?'danger':'ok'}>{critical+negative}</i><span><b>Critical menu items</b><small>{critical+negative?'Food cost is materially above target or contribution is negative.':'No critical menu-cost alerts.'}</small></span></button>
+       {draft&&<button onClick={()=>go('prices')}><i className="review">{draftSummary.changed||0}</i><span><b>Unpublished ShelfSense review</b><small>{draftSummary.increased||0} increased · {draftSummary.decreased||0} decreased. Active costing is unchanged.</small></span></button>}
+      </div>
+    </section>
+
+    <section className="overview-card">
+      <div className="overview-card-head"><div><span>MENU HEALTH</span><h3>Current menu position</h3></div><button onClick={()=>go('menu')}>Open menu costing →</button></div>
+      <div className="health-grid">
+       <div className="healthy"><b>{healthy}</b><span>Healthy</span><small>At or below target</small></div>
+       <div className="watch"><b>{watch}</b><span>Watch</span><small>Up to 5 pts over</small></div>
+       <div className="critical"><b>{critical+negative}</b><span>Critical</span><small>Needs pricing/cost review</small></div>
+       <div className="incomplete"><b>{incomplete}</b><span>Incomplete</span><small>Missing cost or price</small></div>
+      </div>
+      <div className="menu-health-note"><span>Target is set per menu item.</span><b>{menus.length?Math.round((healthy/menus.length)*100)+'% within target':'No menu items yet'}</b></div>
+    </section>
+   </div>
+
+   <div className="overview-grid lower">
+    <section className="overview-card">
+      <div className="overview-card-head"><div><span>COST MOVEMENT</span><h3>Largest ingredient changes</h3></div><button onClick={()=>go('analysis')}>See all →</button></div>
+      <div className="movers">{movements.length?movements.map(i=><button key={i.id} onClick={()=>go('prices')}><span><b>{i.name}</b><small>{i.latest_price?.supplier||'Latest purchase'}</small></span><strong className={i.change>0?'up':'down'}>{i.change>0?'↑':'↓'} {Math.abs(i.change).toFixed(1)}%</strong></button>):<div className="overview-empty">Add at least two purchase prices to start tracking movement.</div>}</div>
+    </section>
+    <section className="overview-card next-step">
+      <div className="overview-card-head"><div><span>WORKFLOW</span><h3>Recommended next step</h3></div></div>
+      {draft?<><div className="next-icon">2</div><h4>Review your ShelfSense snapshot</h4><p>{draftSummary.changed||0} ingredient costs changed. Review the impact before publishing a new costing version.</p><button className="primary" onClick={()=>go('prices')}>Review changes</button></>:missing?<><div className="next-icon">1</div><h4>Complete ingredient prices</h4><p>{missing} ingredients still have no usable purchase cost. Complete these before menu analysis.</p><button className="primary" onClick={()=>go('prices')}>Complete prices</button></>:incomplete?<><div className="next-icon">3</div><h4>Finish menu costing</h4><p>{incomplete} menu items still need a complete cost or selling price.</p><button className="primary" onClick={()=>go('menu')}>Finish menu costing</button></>:<><div className="next-icon done">✓</div><h4>Costing is in good shape</h4><p>Review cost analysis for movements and menu items approaching their target.</p><button className="ghost" onClick={()=>go('analysis')}>Open cost analysis</button></>}
+    </section>
+   </div>
+  </>}
 
  function Categories(){return <><Header title="Categories" sub="Simple menu grouping used by Menu Costing." actions={<button className="primary" onClick={()=>setModal({type:'category'})}>+ Add Category</button>}/><div className="v2-table categories"><div className="thead"><span>Category</span><span>Menu Items</span><span>Actions</span></div>{(data.categories||[]).map(c=>{const used=menus.filter(m=>m.category===c.name).length;return <div className="trow" key={c.id}><span><b>{c.name}</b></span><span>{used}</span><span className="row-actions"><button className="danger" onClick={()=>remove('category',c)}>Delete</button></span></div>})}</div></>}
 
