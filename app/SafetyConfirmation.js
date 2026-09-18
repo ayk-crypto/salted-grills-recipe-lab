@@ -32,6 +32,12 @@ export default function SafetyConfirmation(){
       if(explicit==='import'||text==='Confirm Import'){
         return {kind:'change',title:'Confirm import',message:'Please confirm that you have reviewed the import preview and want to apply these records to Cost Control.'};
       }
+      if(explicit==='publish-costing'){
+        return {kind:'change',title:'Publish reviewed costing?',message:'This will make the reviewed snapshot the active PlateCost costing. Your previous published costing will remain preserved in Costing History.'};
+      }
+      if(explicit==='restore-costing'){
+        return {kind:'change',title:'Restore historical costing?',message:'This historical costing will become active again. Your current costing will be archived, not deleted.'};
+      }
       if(explicit==='save'||(text==='Save' && button.closest('.editor-page'))){
         return {kind:'change',title:'Confirm cost-sheet changes',message:`Save the changes to ${name||'this cost sheet'}? Existing costing will be replaced by the values currently shown in the editor.`};
       }
