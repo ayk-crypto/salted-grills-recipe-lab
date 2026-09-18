@@ -70,7 +70,6 @@ export async function POST(req){
 
     if(action==='publish'){
       if(snapshot.status!=='draft')return NextResponse.json({error:'Only draft snapshots can be published'},{status:409});
-      if(Number(summary.needsYield||0)>0)return NextResponse.json({error:`${summary.needsYield} ingredient${Number(summary.needsYield)===1?'':'s'} still need yield before publishing.`},{status:409});
       await sql`UPDATE costing_snapshots SET status='archived' WHERE tenant_id=${tenant.id} AND status='published' AND id<>${snapshot.id}`;
       let inserted=0;
       for(const l of ingredientLines){
@@ -81,7 +80,7 @@ export async function POST(req){
         inserted++;
       }
       await sql`UPDATE costing_snapshots SET status='published' WHERE id=${snapshot.id} AND tenant_id=${tenant.id}`;
-      return NextResponse.json({ok:true,status:'published',inserted,snapshotId:snapshot.id});
+      return NextResponse.json({ok:true,status:'published',inserted,needsYield:Number(summary.needsYield||0),snapshotId:snapshot.id});
     }
 
     if(action==='restore'){
