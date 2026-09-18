@@ -3,7 +3,12 @@ import {useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
 import "./ingredient-cost-page.css";
 
-const NAV=[['/','Overview'],['/ingredients','Ingredients'],['/purchase-prices','Purchase Prices'],['/prepared-components','Bulk Recipes'],['/menu-costing','Menu Costing'],['/cost-analysis','Cost Analysis'],['/categories','Categories'],['/settings','Settings']];
+const NAV_GROUPS=[
+ {label:'HOME',items:[['/','Overview']]},
+ {label:'COST WORKFLOW',items:[['/ingredients','Ingredients'],['/purchase-prices','Purchase Prices'],['/prepared-components','Bulk Recipes'],['/menu-costing','Menu Costing']]},
+ {label:'INSIGHTS',items:[['/cost-analysis','Cost Analysis']]},
+ {label:'MANAGE',items:[['/categories','Categories'],['/settings','Settings']]}
+];
 const money=n=>Number.isFinite(Number(n))?`Rs ${Number(n).toLocaleString(undefined,{maximumFractionDigits:2})}`:'—';
 const norm=v=>String(v||'').trim().toLowerCase();
 function unitInfo(unit){const u=norm(unit);if(u==='kg')return['weight',1000,'g'];if(['g','gm','gram','grams'].includes(u))return['weight',1,'g'];if(['l','ltr','liter','litre'].includes(u))return['volume',1000,'ml'];if(u==='ml')return['volume',1,'ml'];if(['pc','pcs','piece','pieces','each'].includes(u))return['count',1,'pc'];return[u||'other',1,u||'other']}
@@ -14,11 +19,12 @@ function fmtDate(v){return v?new Date(v).toLocaleDateString(undefined,{day:'2-di
 export default function IngredientCostPage(){
  const router=useRouter();
  const [data,setData]=useState({tenant:null,ingredients:[],recipes:[]});
- const [loading,setLoading]=useState(true),[error,setError]=useState(''),[q,setQ]=useState(''),[view,setView]=useState('all');
+ const [loading,setLoading]=useState(true),[error,setError]=useState(''),[q,setQ]=useState(''),[view,setView]=useState('all'),[navOpen,setNavOpen]=useState(false);
  const [yieldItem,setYieldItem]=useState(null),[yieldQty,setYieldQty]=useState(''),[yieldUnit,setYieldUnit]=useState('g'),[saving,setSaving]=useState(false);
  const [editItem,setEditItem]=useState(null),[notice,setNotice]=useState('');
  async function load(){setLoading(true);setError('');try{const r=await fetch('/api/bootstrap',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Could not load ingredients');setData(j)}catch(e){setError(e.message)}finally{setLoading(false)}}
  useEffect(()=>{load()},[]);
+ useEffect(()=>{document.body.classList.toggle('v2-nav-open',navOpen);return()=>document.body.classList.remove('v2-nav-open')},[navOpen]);
  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),2600);return()=>clearTimeout(t)},[notice]);
  const rows=useMemo(()=>data.ingredients.map(i=>buildRow(i,data.recipes||[])),[data]);
  const visible=useMemo(()=>rows.filter(r=>r.name.toLowerCase().includes(q.toLowerCase())).filter(r=>view==='all'||(view==='yield'&&r.needsYield)||(view==='ready'&&r.ready)||(view==='flagged'&&r.isFlagged)||(view==='missing'&&!r.hasSource)),[rows,q,view]);
@@ -46,7 +52,16 @@ export default function IngredientCostPage(){
  async function downloadTemplate(){const XLSX=await import('xlsx');const rows=(data.ingredients||[]).map(i=>({'Ingredient Name':i.name,'Default Unit':i.default_unit||'g','Type':i.ingredient_type||'raw','Notes':i.notes||''}));rows.push({'Ingredient Name':'','Default Unit':'g','Type':'raw','Notes':''});const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Ingredients');XLSX.writeFile(wb,'PlateCost-Ingredients.xlsx')}
  async function importIngredients(file){const XLSX=await import('xlsx');const wb=XLSX.read(await file.arrayBuffer()),ws=wb.Sheets[wb.SheetNames[0]],raw=XLSX.utils.sheet_to_json(ws,{defval:''});const rows=raw.map(r=>({name:r['Ingredient Name']||r.name,default_unit:r['Default Unit']||r.default_unit||'g',ingredient_type:r['Type']||r.type||'raw',notes:r['Notes']||r.notes||''})).filter(r=>String(r.name||'').trim());if(!rows.length)return setNotice('No ingredients found in file');if(!window.confirm(`Import ${rows.length} ingredient rows? Existing names will be updated.`))return;const res=await fetch('/api/ingredients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})}),j=await res.json();if(!res.ok)return setNotice(j.error||'Import failed');setNotice(`${j.created||0} added, ${j.updated||0} updated`);await load()}
  const workspace=data.tenant?.name||'Workspace';
- return <div className="v2-shell ingredient-cost-shell"><aside className="v2-side"><div className="pc-brand"><div className="pc-mark">PC</div><div><b>PlateCost</b><span>Restaurant Cost Control</span></div></div><div className="pc-workspace"><small>WORKSPACE</small><b>{workspace}</b></div><nav>{NAV.map(([href,label])=><button key={href} className={href==='/ingredients'?'active':''} onClick={()=>router.push(href)}>{label}</button>)}</nav><footer><b>PlateCost</b><span>Costing workspace</span></footer></aside><div className="v2-work"><main className="v2-main ingredient-cost-main">
+ return <div className="v2-shell ingredient-cost-shell">
+ <div className="v2-mobile-bar"><button type="button" className="v2-menu-toggle" aria-label={navOpen?'Close menu':'Open menu'} aria-expanded={navOpen} onClick={()=>setNavOpen(v=>!v)}><span></span><span></span><span></span></button><div><b>PlateCost</b><span>Ingredients</span></div></div>
+ <button type="button" aria-label="Close menu" className={`v2-nav-backdrop ${navOpen?'show':''}`} onClick={()=>setNavOpen(false)}/>
+ <aside className={`v2-side ${navOpen?'mobile-open':''}`}>
+   <div className="pc-brand"><div className="pc-mark">PC</div><div><b>PlateCost</b><span>Restaurant Cost Control</span></div></div>
+   <div className="pc-workspace"><small>WORKSPACE</small><b>{workspace}</b></div>
+   <nav>{NAV_GROUPS.map(group=><div className="v2-nav-group" data-nav-group={group.label.toLowerCase().replace(/\s+/g,'-')} key={group.label}><div className="v2-nav-group-title">{group.label}</div>{group.items.map(([href,label])=><button key={href} className={href==='/ingredients'?'active':''} onClick={()=>{setNavOpen(false);router.push(href)}}>{label}</button>)}</div>)}</nav>
+   <footer><b>PlateCost</b><span>Restaurant costing</span></footer>
+ </aside>
+ <div className="v2-work"><main className="v2-main ingredient-cost-main">
    <div className="v2-head"><div><span>COST PIPELINE</span><h1>Ingredients</h1><p>ShelfSense supplies purchase and storage cost. PlateCost applies usable yield and calculates the kitchen unit cost used in recipes.</p></div><div className="v2-actions"><button className="ghost" onClick={downloadTemplate}>Download Template</button><label className="ghost file">Import Ingredients<input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files?.[0]&&importIngredients(e.target.files[0])}/></label><button className="primary" onClick={()=>setEditItem({})}>+ Add Ingredient</button></div></div>
    <div className="cost-flow"><div><small>1 · SOURCE</small><b>ShelfSense</b><span>Purchase + storage cost</span></div><i>→</i><div><small>2 · PLATECOST</small><b>Usable Yield</b><span>Waste / drained / usable qty</span></div><i>→</i><div><small>3 · RESULT</small><b>Kitchen Unit Cost</b><span>Rs/g · Rs/ml · Rs/pc</span></div></div>
    <div className="ingredient-status"><button className={view==='all'?'active':''} onClick={()=>setView('all')}>All <b>{counts.all}</b></button><button className={view==='yield'?'active':''} onClick={()=>setView('yield')}>Needs yield <b>{counts.yield}</b></button><button className={view==='ready'?'active':''} onClick={()=>setView('ready')}>Cost ready <b>{counts.ready}</b></button><button className={view==='missing'?'active':''} onClick={()=>setView('missing')}>No source cost <b>{counts.missing}</b></button><button className={view==='flagged'?'active':''} onClick={()=>setView('flagged')}>Flagged <b>{counts.flagged}</b></button></div>
