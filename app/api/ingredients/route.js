@@ -16,12 +16,13 @@ export async function POST(req){
         if(!name){results.push({index,status:"error",error:"Ingredient name is required"});continue;}
         const defaultUnit=clean(r.default_unit||r["Default Unit"]||"g")||"g";
         const ingredientType=clean(r.ingredient_type||r.type||r["Type"]||"raw")||"raw";
+        const ingredientCategory=clean(r.ingredient_category||r.category||r["Category"])||null;
         const notes=clean(r.notes||r["Notes"])||null,found=byName.get(norm(name));
         if(found){
-          const [updated]=await sql`UPDATE ingredients SET name=${name},default_unit=${defaultUnit},ingredient_type=${ingredientType},notes=${notes},is_active=true,updated_at=now() WHERE id=${found.id} AND tenant_id=${tid} RETURNING id,name,default_unit,ingredient_type`;
+          const [updated]=await sql`UPDATE ingredients SET name=${name},default_unit=${defaultUnit},ingredient_type=${ingredientType},ingredient_category=${ingredientCategory},notes=${notes},is_active=true,updated_at=now() WHERE id=${found.id} AND tenant_id=${tid} RETURNING id,name,default_unit,ingredient_type,ingredient_category`;
           results.push({index,status:"updated",...updated});
         }else{
-          const [created]=await sql`INSERT INTO ingredients (tenant_id,name,default_unit,ingredient_type,notes) VALUES (${tid},${name},${defaultUnit},${ingredientType},${notes}) RETURNING id,name,default_unit,ingredient_type`;
+          const [created]=await sql`INSERT INTO ingredients (tenant_id,name,default_unit,ingredient_type,ingredient_category,notes) VALUES (${tid},${name},${defaultUnit},${ingredientType},${ingredientCategory},${notes}) RETURNING id,name,default_unit,ingredient_type,ingredient_category`;
           byName.set(norm(name),created);results.push({index,status:"created",...created});
         }
       }
@@ -30,7 +31,7 @@ export async function POST(req){
     const name=clean(body.name);if(!name)return NextResponse.json({error:"Name is required"},{status:400});
     const [dupe]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${name}) LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An ingredient with this name already exists"},{status:409});
-    const [row]=await sql`INSERT INTO ingredients (tenant_id,name,default_unit,ingredient_type,notes) VALUES (${tid},${name},${body.default_unit||"g"},${body.ingredient_type||"raw"},${body.notes||null}) RETURNING *`;
+    const [row]=await sql`INSERT INTO ingredients (tenant_id,name,default_unit,ingredient_type,ingredient_category,notes) VALUES (${tid},${name},${body.default_unit||"g"},${body.ingredient_type||"raw"},${clean(body.ingredient_category)||null},${body.notes||null}) RETURNING *`;
     return NextResponse.json(row,{status:201});
   }catch(e){return NextResponse.json({error:e.message},{status:500});}
 }
@@ -42,7 +43,7 @@ export async function PATCH(req){
     const sql=db(),tenant=await requireTenant(),tid=tenant.id;
     const [dupe]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${name}) AND id<>${body.id} LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An ingredient with this name already exists"},{status:409});
-    const [row]=await sql`UPDATE ingredients SET name=${name},default_unit=${body.default_unit||"g"},ingredient_type=${body.ingredient_type||"raw"},notes=${body.notes||null},updated_at=now() WHERE id=${body.id} AND tenant_id=${tid} AND is_active=true RETURNING *`;
+    const [row]=await sql`UPDATE ingredients SET name=${name},default_unit=${body.default_unit||"g"},ingredient_type=${body.ingredient_type||"raw"},ingredient_category=${clean(body.ingredient_category)||null},notes=${body.notes||null},updated_at=now() WHERE id=${body.id} AND tenant_id=${tid} AND is_active=true RETURNING *`;
     if(!row)return NextResponse.json({error:"Ingredient not found"},{status:404});
     return NextResponse.json(row);
   }catch(e){return NextResponse.json({error:e.message},{status:500});}
