@@ -63,63 +63,121 @@ export default function CostControlApp(){
  function AnalysisPage(){const missing=ingredients.filter(i=>!i.latest_price),changed=ingredients.map(i=>({...i,change:priceChange(i)})).filter(i=>Number.isFinite(i.change)).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)),stats=menus.map(r=>({r,...menuStats(r)})),over=stats.filter(x=>Number.isFinite(x.food)&&x.food>x.target),incomplete=stats.filter(x=>!Number.isFinite(x.cost)||!x.sell);return <><Header title="Cost Analysis" sub="Focus attention on missing prices, cost pressure and menu items that need action."/><div className="kpis"><div><span>Missing Prices</span><b>{missing.length}</b><small>ingredients need purchase cost</small></div><div><span>Over Target</span><b>{over.length}</b><small>menu items above target food cost</small></div><div><span>Incomplete Costing</span><b>{incomplete.length}</b><small>menu items need data</small></div><div><span>Price Changes</span><b>{changed.filter(x=>Math.abs(x.change)>=5).length}</b><small>ingredients moved ≥5%</small></div></div><div className="analysis-grid"><section><h3>Largest ingredient price movements</h3>{changed.slice(0,10).map(i=><div className="analysis-row" key={i.id}><span><b>{i.name}</b><small>{i.latest_price?.supplier||'Latest purchase'}</small></span><strong className={i.change>0?'bad':'good'}>{i.change>0?'+':''}{pct(i.change)}</strong></div>)}{!changed.length&&<Empty>Add at least two prices for an ingredient to see movement.</Empty>}</section><section><h3>Menu items needing attention</h3>{[...over,...incomplete.filter(x=>!over.includes(x))].slice(0,10).map(x=><div className="analysis-row" key={x.r.id}><span><b>{x.r.name}</b><small>{Number.isFinite(x.cost)?`${money(x.cost)} cost`:'Cost incomplete'}</small></span><strong className="bad">{Number.isFinite(x.food)?pct(x.food):'Review'}</strong></div>)}{!over.length&&!incomplete.length&&<Empty>No menu item alerts.</Empty>}</section></div></>}
 
  function Dashboard(){
-  const missing=ingredients.filter(i=>!i.latest_price).length;
-  const completeMenus=menus.filter(r=>Number.isFinite(recipeCost(r))).length;
+  const ingredientReady=ingredients.filter(i=>i.latest_price?.costing_status==='ready').length;
+  const priced=ingredients.filter(i=>i.latest_price).length;
+  const missing=Math.max(0,ingredients.length-priced);
+  const needsYield=ingredients.filter(i=>i.latest_price?.costing_status==='needs_yield').length;
   const menuRows=menus.map(r=>({r,...menuStats(r)}));
-  const healthy=menuRows.filter(x=>Number.isFinite(x.food)&&x.sell&&x.food<=x.target).length;
-  const watch=menuRows.filter(x=>Number.isFinite(x.food)&&x.sell&&x.food>x.target&&x.food<=x.target+5).length;
-  const critical=menuRows.filter(x=>Number.isFinite(x.food)&&x.sell&&x.food>x.target+5&&x.cost<x.sell).length;
-  const negative=menuRows.filter(x=>Number.isFinite(x.cost)&&x.sell>0&&x.cost>=x.sell).length;
-  const incomplete=Math.max(0,menus.length-healthy-watch-critical-negative);
-  const active=snapshots.find(x=>x.status==='published');
-  const draft=snapshots.find(x=>x.status==='draft');
-  const draftSummary=draft?.summary||{};
-  const movements=ingredients.map(i=>({...i,change:priceChange(i)})).filter(i=>Number.isFinite(i.change)&&Math.abs(i.change)>=.01).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,6);
-  const attention=(Number(draftSummary.needsYield||0)||0)+missing+critical+negative;
-  const dateLabel=v=>v?new Date(v).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'Not published';
-  return <><Header title="Overview" sub="See costing health, ShelfSense changes and what needs attention before you update the menu." actions={<button className="primary" onClick={()=>go('prices')}>Review ShelfSense</button>}/>
-   <div className="overview-status">
-    <div><span>ACTIVE COSTING</span><b>{dateLabel(active?.snapshot_date)}</b><small>{active?'Published and in use':'Using current live costing'}</small></div>
-    <div className={draft?'has-review':''}><span>LATEST REVIEW</span><b>{draft?dateLabel(draft.snapshot_date):'No draft review'}</b><small>{draft?<>{draftSummary.changed||0} price changes · not published</>:'Sync ShelfSense to create a review'}</small></div>
-    <div className={attention?'needs-attention':''}><span>ATTENTION</span><b>{attention}</b><small>{missing} missing price · {critical+negative} menu alerts</small></div>
-    <div><span>MENU COSTING</span><b>{completeMenus}/{menus.length}</b><small>cost sheets complete</small></div>
+  const completeMenuRows=menuRows.filter(x=>Number.isFinite(x.cost)&&x.sell>0);
+  const recipeComplete=menuRows.filter(x=>Number.isFinite(x.cost)).length;
+  const sellingReady=menuRows.filter(x=>x.sell>0).length;
+  const packagingReady=menus.filter(r=>r.packaging_set).length;
+  const healthy=completeMenuRows.filter(x=>x.food<=x.target).length;
+  const watch=completeMenuRows.filter(x=>x.food>x.target&&x.food<=x.target+5).length;
+  const critical=completeMenuRows.filter(x=>x.food>x.target+5||x.operatingContribution<0).length;
+  const avgFood=completeMenuRows.length?completeMenuRows.reduce((a,x)=>a+x.food,0)/completeMenuRows.length:NaN;
+  const avgOperating=completeMenuRows.length?completeMenuRows.reduce((a,x)=>a+x.operatingContribution,0)/completeMenuRows.length:NaN;
+  const ingredientPct=ingredients.length?ingredientReady/ingredients.length*100:0;
+  const menuPct=menus.length?recipeComplete/menus.length*100:0;
+  const readiness=Math.round((ingredientPct*.55)+(menuPct*.45));
+  const active=snapshots.find(x=>x.status==='published'),draft=snapshots.find(x=>x.status==='draft'),draftSummary=draft?.summary||{};
+  const overheadTotal=(costModel.monthly_overheads||[]).reduce((a,x)=>a+Number(x.amount||0),0);
+  const salesBasis=Number(costModel.monthly_sales_basis||0),overheadPct=salesBasis>0?overheadTotal/salesBasis*100:0;
+  const variablePct=Number(costModel.payment_fee_pct||0)+Number(costModel.delivery_commission_pct||0)+Number(costModel.other_variable_pct||0);
+  const unassignedPackaging=Math.max(0,menus.length-packagingReady);
+  const movements=ingredients.map(i=>({...i,change:priceChange(i)})).filter(i=>Number.isFinite(i.change)&&Math.abs(i.change)>=.01).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,5);
+  const risky=[...menuRows].filter(x=>x.sell>0).sort((a,b)=>{const ar=(Number.isFinite(a.operatingContribution)?-a.operatingContribution:999999)+(Number.isFinite(a.food)?Math.max(0,a.food-a.target)*100:5000),br=(Number.isFinite(b.operatingContribution)?-b.operatingContribution:999999)+(Number.isFinite(b.food)?Math.max(0,b.food-b.target)*100:5000);return br-ar}).slice(0,5);
+  const actionCount=(missing?1:0)+(needsYield?1:0)+(draft?1:0)+(critical?1:0)+(unassignedPackaging?1:0)+(salesBasis<=0?1:0);
+  const dateLabel=v=>v?new Date(v).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'—';
+  const bar=(value,total)=>total?Math.max(0,Math.min(100,value/total*100)):0;
+  return <div className="ops-dashboard">
+   <div className="ops-dashboard-head">
+    <div><span>PLATECOST · COMMAND CENTER</span><h1>Cost Control Overview</h1><p>One place to see whether your costing is reliable, what changed, and what needs action today.</p></div>
+    <div className="ops-head-actions"><button className="ghost" onClick={()=>go('prices')}>Sync / Review Prices</button><button className="primary" onClick={()=>go('menu')}>Open Menu Costing</button></div>
    </div>
 
-   <div className="overview-grid">
-    <section className="overview-card overview-attention">
-      <div className="overview-card-head"><div><span>PRIORITY</span><h3>What needs attention</h3></div><button onClick={()=>go('analysis')}>View analysis →</button></div>
-      <div className="attention-list">
-       <button onClick={()=>go('prices')}><i className={missing?'warn':'ok'}>{missing}</i><span><b>Missing purchase prices</b><small>{missing?'Add or sync these before relying on menu cost.':'All ingredients have a price.'}</small></span></button>
-       <button onClick={()=>go('ingredients')}><i className={Number(draftSummary.needsYield||0)?'warn':'ok'}>{Number(draftSummary.needsYield||0)}</i><span><b>Ingredients needing yield</b><small>{Number(draftSummary.needsYield||0)?'Set usable yield for packaged ingredients.':'No pending yield from latest review.'}</small></span></button>
-       <button onClick={()=>go('menu')}><i className={(critical+negative)?'danger':'ok'}>{critical+negative}</i><span><b>Critical menu items</b><small>{critical+negative?'Food cost is materially above target or contribution is negative.':'No critical menu-cost alerts.'}</small></span></button>
-       {draft&&<button onClick={()=>go('prices')}><i className="review">{draftSummary.changed||0}</i><span><b>Unpublished ShelfSense review</b><small>{draftSummary.increased||0} increased · {draftSummary.decreased||0} decreased. Active costing is unchanged.</small></span></button>}
+   <section className="ops-hero">
+    <div className="ops-readiness">
+      <div className="ops-score" style={{'--score':readiness}}><strong>{readiness}%</strong><span>ready</span></div>
+      <div><span className="ops-kicker">COSTING READINESS</span><h2>{readiness>=90?'Costing is operational':readiness>=70?'Good progress — finish the gaps':'Costing needs setup before decisions'}</h2><p>{ingredientReady}/{ingredients.length} ingredients have kitchen cost · {recipeComplete}/{menus.length} menu items have complete recipe cost.</p></div>
+    </div>
+    <div className="ops-hero-status">
+      <div><span>ACTIVE COSTING</span><b>{active?dateLabel(active.snapshot_date):'Not versioned'}</b><small>{active?'Published snapshot in use':'Live prices are being used'}</small></div>
+      <div className={draft?'pending':''}><span>SHELFENSE REVIEW</span><b>{draft?(draftSummary.changed||0)+' changes':'Up to date'}</b><small>{draft?'Review before publishing':'No draft awaiting action'}</small></div>
+      <div><span>OVERHEAD BURDEN</span><b>{salesBasis>0?pct(overheadPct):'Not set'}</b><small>{salesBasis>0?money(overheadTotal)+' / month':'Add monthly sales basis'}</small></div>
+      <div className={actionCount?'attention':''}><span>ACTIONS</span><b>{actionCount}</b><small>{actionCount?'items need attention':'No immediate blockers'}</small></div>
+    </div>
+   </section>
+
+   <div className="ops-grid primary-grid">
+    <section className="ops-panel action-panel">
+      <div className="ops-panel-head"><div><span>OPERATIONS QUEUE</span><h3>What needs action</h3></div><small>Work top-to-bottom</small></div>
+      <div className="ops-action-list">
+       {draft&&<button onClick={()=>go('prices')}><i className="review">01</i><span><b>Review & publish ShelfSense prices</b><small>{draftSummary.changed||0} changed · {draftSummary.increased||0} increased · {draftSummary.decreased||0} decreased</small></span><strong>Review →</strong></button>}
+       {missing>0&&<button onClick={()=>go('ingredients')}><i className="warn">{draft?'02':'01'}</i><span><b>{missing} ingredients have no source price</b><small>These cannot contribute a reliable recipe cost.</small></span><strong>Fix →</strong></button>}
+       {needsYield>0&&<button onClick={()=>go('ingredients')}><i className="warn">{needsYield}</i><span><b>{needsYield} ingredients need usable yield</b><small>Purchase cost exists, but kitchen unit cost cannot be calculated yet.</small></span><strong>Set yield →</strong></button>}
+       {critical>0&&<button onClick={()=>go('menu')}><i className="danger">{critical}</i><span><b>{critical} menu items need margin review</b><small>Above target food cost or negative estimated operating contribution.</small></span><strong>Review →</strong></button>}
+       {unassignedPackaging>0&&<button onClick={()=>go('packaging')}><i>{unassignedPackaging}</i><span><b>Packaging not assigned to {unassignedPackaging} menu items</b><small>Assign category defaults or menu overrides where takeaway/delivery packaging applies.</small></span><strong>Assign →</strong></button>}
+       {salesBasis<=0&&<button onClick={()=>go('settings')}><i>!</i><span><b>Operating overhead allocation is not configured</b><small>Add monthly sales basis so operating contribution includes rent, salaries and fixed costs.</small></span><strong>Configure →</strong></button>}
+       {!actionCount&&<div className="ops-clear"><b>✓ No immediate blockers</b><span>Costing data is ready for menu review.</span></div>}
       </div>
     </section>
 
-    <section className="overview-card">
-      <div className="overview-card-head"><div><span>MENU HEALTH</span><h3>Current menu position</h3></div><button onClick={()=>go('menu')}>Open menu costing →</button></div>
-      <div className="health-grid">
-       <div className="healthy"><b>{healthy}</b><span>Healthy</span><small>At or below target</small></div>
-       <div className="watch"><b>{watch}</b><span>Watch</span><small>Up to 5 pts over</small></div>
-       <div className="critical"><b>{critical+negative}</b><span>Critical</span><small>Needs pricing/cost review</small></div>
-       <div className="incomplete"><b>{incomplete}</b><span>Incomplete</span><small>Missing cost or price</small></div>
+    <section className="ops-panel coverage-panel">
+      <div className="ops-panel-head"><div><span>DATA COVERAGE</span><h3>Can you trust the numbers?</h3></div><small>{ingredients.length} ingredients · {menus.length} menu items</small></div>
+      <div className="coverage-list">
+       <div><div><span>Ingredient prices</span><b>{priced}/{ingredients.length}</b></div><i><em style={{width:bar(priced,ingredients.length)+'%'}}/></i><small>{missing} missing</small></div>
+       <div><div><span>Kitchen cost ready</span><b>{ingredientReady}/{ingredients.length}</b></div><i><em style={{width:bar(ingredientReady,ingredients.length)+'%'}}/></i><small>{needsYield} need yield</small></div>
+       <div><div><span>Menu recipe costing</span><b>{recipeComplete}/{menus.length}</b></div><i><em style={{width:bar(recipeComplete,menus.length)+'%'}}/></i><small>{Math.max(0,menus.length-recipeComplete)} incomplete</small></div>
+       <div><div><span>Selling prices</span><b>{sellingReady}/{menus.length}</b></div><i><em style={{width:bar(sellingReady,menus.length)+'%'}}/></i><small>{Math.max(0,menus.length-sellingReady)} missing</small></div>
+       <div><div><span>Packaging assigned</span><b>{packagingReady}/{menus.length}</b></div><i><em style={{width:bar(packagingReady,menus.length)+'%'}}/></i><small>{unassignedPackaging} without a set</small></div>
       </div>
-      <div className="menu-health-note"><span>Target is set per menu item.</span><b>{menus.length?Math.round((healthy/menus.length)*100)+'% within target':'No menu items yet'}</b></div>
     </section>
    </div>
 
-   <div className="overview-grid lower">
-    <section className="overview-card">
-      <div className="overview-card-head"><div><span>COST MOVEMENT</span><h3>Largest ingredient changes</h3></div><button onClick={()=>go('analysis')}>See all →</button></div>
-      <div className="movers">{movements.length?movements.map(i=><button key={i.id} onClick={()=>go('prices')}><span><b>{i.name}</b><small>{i.latest_price?.supplier||'Latest purchase'}</small></span><strong className={i.change>0?'up':'down'}>{i.change>0?'↑':'↓'} {Math.abs(i.change).toFixed(1)}%</strong></button>):<div className="overview-empty">Add at least two purchase prices to start tracking movement.</div>}</div>
+   <div className="ops-grid economics-grid">
+    <section className="ops-panel menu-economics">
+      <div className="ops-panel-head"><div><span>MENU ECONOMICS</span><h3>Current profitability picture</h3></div><button onClick={()=>go('menu')}>Open costing →</button></div>
+      <div className="economics-kpis">
+       <div><span>AVG FOOD COST</span><b>{pct(avgFood)}</b><small>Across {completeMenuRows.length} complete items</small></div>
+       <div><span>AVG OPERATING CONTRIBUTION</span><b className={avgOperating<0?'bad':''}>{money(avgOperating)}</b><small>After variable cost + overhead</small></div>
+       <div><span>WITHIN TARGET</span><b>{healthy}</b><small>{menus.length?Math.round(healthy/menus.length*100):0}% of menu</small></div>
+       <div><span>WATCH / CRITICAL</span><b className={(watch+critical)>0?'bad':''}>{watch+critical}</b><small>{watch} watch · {critical} critical</small></div>
+      </div>
+      <div className="risk-table">
+       <div className="risk-head"><span>Menu item</span><span>Food cost</span><span>Operating contribution</span><span>Status</span></div>
+       {risky.length?risky.map(x=>{const state=!Number.isFinite(x.cost)||!x.sell?'Incomplete':x.operatingContribution<0?'Negative':x.food>x.target+5?'Critical':x.food>x.target?'Watch':'Healthy';return <button className="risk-row" key={x.r.id} onClick={()=>startEditor('menu',x.r)}><span><b>{x.r.name}</b><small>{x.r.category||'Uncategorized'}</small></span><span>{pct(x.food)}<small>target {x.target}%</small></span><span className={x.operatingContribution<0?'bad':''}>{money(x.operatingContribution)}</span><span><em className={'risk-pill '+state.toLowerCase()}>{state}</em></span></button>}):<div className="overview-empty">Add menu prices and recipe costs to see profitability.</div>}
+      </div>
     </section>
-    <section className="overview-card next-step">
-      <div className="overview-card-head"><div><span>WORKFLOW</span><h3>Recommended next step</h3></div></div>
-      {draft?<><div className="next-icon">2</div><h4>Review your ShelfSense snapshot</h4><p>{draftSummary.changed||0} ingredient costs changed. Review the impact before publishing a new costing version.</p><button className="primary" onClick={()=>go('prices')}>Review changes</button></>:missing?<><div className="next-icon">1</div><h4>Complete ingredient prices</h4><p>{missing} ingredients still have no usable purchase cost. Complete these before menu analysis.</p><button className="primary" onClick={()=>go('prices')}>Complete prices</button></>:incomplete?<><div className="next-icon">3</div><h4>Finish menu costing</h4><p>{incomplete} menu items still need a complete cost or selling price.</p><button className="primary" onClick={()=>go('menu')}>Finish menu costing</button></>:<><div className="next-icon done">✓</div><h4>Costing is in good shape</h4><p>Review cost analysis for movements and menu items approaching their target.</p><button className="ghost" onClick={()=>go('analysis')}>Open cost analysis</button></>}
+
+    <section className="ops-panel cost-model-panel">
+      <div className="ops-panel-head"><div><span>COST MODEL</span><h3>Business cost assumptions</h3></div><button onClick={()=>go('settings')}>Edit model →</button></div>
+      <div className="model-stack">
+       <div><span>Monthly overhead</span><b>{money(overheadTotal)}</b><small>{(costModel.monthly_overheads||[]).length} configured cost lines</small></div>
+       <div><span>Monthly sales basis</span><b>{salesBasis>0?money(salesBasis):'Not configured'}</b><small>Used for overhead allocation</small></div>
+       <div><span>Variable selling costs</span><b>{pct(variablePct)}</b><small>Payment + delivery + other</small></div>
+       <div><span>Tax</span><b>{costModel.tax_enabled?pct(costModel.tax_rate):'Disabled'}</b><small>{costModel.tax_enabled?(costModel.prices_include_tax?'Selling prices include tax':'Selling prices exclude tax'):'No tax adjustment'}</small></div>
+      </div>
+      <div className="model-foot"><span>Estimated overhead burden</span><b>{salesBasis>0?pct(overheadPct):'—'}</b></div>
     </section>
    </div>
-  </>}
 
+   <div className="ops-grid lower-grid">
+    <section className="ops-panel movers-panel">
+      <div className="ops-panel-head"><div><span>COST MOVEMENT</span><h3>Largest ingredient price changes</h3></div><button onClick={()=>go('analysis')}>See analysis →</button></div>
+      <div className="ops-movers">{movements.length?movements.map(i=><button key={i.id} onClick={()=>go('prices')}><span><b>{i.name}</b><small>{i.latest_price?.supplier||'Latest purchase'} · {i.latest_price?.price_date?dateLabel(i.latest_price.price_date):'latest'}</small></span><strong className={i.change>0?'up':'down'}>{i.change>0?'↑':'↓'} {Math.abs(i.change).toFixed(1)}%</strong></button>):<div className="overview-empty">Price movement appears after at least two comparable purchase prices exist.</div>}</div>
+    </section>
+    <section className="ops-panel snapshot-panel">
+      <div className="ops-panel-head"><div><span>COSTING CONTROL</span><h3>Version & review status</h3></div></div>
+      <div className="snapshot-timeline">
+       <div className={active?'done':''}><i>{active?'✓':'1'}</i><span><b>Published costing</b><small>{active?dateLabel(active.snapshot_date):'No costing version published yet'}</small></span></div>
+       <div className={draft?'current':''}><i>{draft?'2':'✓'}</i><span><b>Latest ShelfSense review</b><small>{draft?(dateLabel(draft.snapshot_date)+' · '+(draftSummary.changed||0)+' changes awaiting review'):'No pending draft review'}</small></span></div>
+       <div><i>3</i><span><b>Next action</b><small>{draft?'Review and publish when approved':missing?'Complete missing ingredient prices':'Run the next ShelfSense review when prices change'}</small></span></div>
+      </div>
+      <button className={draft?'primary':'ghost'} onClick={()=>go('prices')}>{draft?'Review pending snapshot':'Open Purchase Prices'}</button>
+    </section>
+   </div>
+  </div>}
  function Categories(){return <><Header title="Categories" sub="Simple menu grouping used by Menu Costing." actions={<button className="primary" onClick={()=>setModal({type:'category'})}>+ Add Category</button>}/><div className="v2-table categories"><div className="thead"><span>Category</span><span>Menu Items</span><span>Actions</span></div>{(data.categories||[]).map(c=>{const used=menus.filter(m=>m.category===c.name).length;return <div className="trow" key={c.id}><span><b>{c.name}</b></span><span>{used}</span><span className="row-actions"><button className="danger" onClick={()=>remove('category',c)}>Delete</button></span></div>})}</div></>}
 
  function Editor(){if(!editor)return null;const isBulk=editor.type==='bulk';const cost=editor.components.reduce((a,c)=>{let v=NaN;if(c.kind==='ingredient')v=ingredientCost(ingredients.find(i=>i.id===c.id),c.quantity,c.unit);else{const r=prepared.find(x=>x.id===c.id),rc=recipeCost(r);if(Number.isFinite(rc)&&Number(r?.yield_quantity)>0&&unitInfo(r.yield_unit)[0]===unitInfo(c.unit)[0])v=rc*(baseQty(c.quantity,c.unit)/baseQty(r.yield_quantity,r.yield_unit))}return Number.isFinite(a)&&Number.isFinite(v)?a+v:NaN},0);const sell=Number(editor.selling_price||0),food=sell>0&&Number.isFinite(cost)?cost/sell*100:NaN;return <div className="editor-page"><div className="editor-head"><button onClick={()=>{setEditor(null);router.push(isBulk?'/prepared-components':'/menu-costing')}}>←</button><div><span>{isBulk?'PREPARED COMPONENT':'MENU COSTING'}</span><h1>{editor.id?'Edit':'Add'} {isBulk?'Prepared Component':'Menu Item'}</h1></div><button className="primary" disabled={saving} onClick={saveEditor}>{saving?'Saving...':'Save'}</button></div><div className="editor-grid"><section className="editor-card"><label>{isBulk?'Component name':'Menu item name'}<input value={editor.name} onChange={e=>setEditor({...editor,name:e.target.value})}/></label>{isBulk?<div className="two"><label>Usable batch yield<input type="number" step="0.01" value={editor.yield_quantity} onChange={e=>setEditor({...editor,yield_quantity:e.target.value})}/></label><label>Yield unit<select value={editor.yield_unit} onChange={e=>setEditor({...editor,yield_unit:e.target.value})}>{units.map(u=><option key={u}>{u}</option>)}</select></label></div>:<><div className="two"><label>Category<select value={editor.category} onChange={e=>setEditor({...editor,category:e.target.value})}><option value="">Select category</option>{data.categories.map(c=><option key={c.id}>{c.name}</option>)}</select></label><label>Selling price (Rs)<input type="number" value={editor.selling_price} onChange={e=>setEditor({...editor,selling_price:e.target.value})}/></label></div><label>Target food cost %<input type="number" value={editor.target_food_cost} onChange={e=>setEditor({...editor,target_food_cost:e.target.value})}/></label></>}<h3>Cost Components</h3>{editor.components.map((c,n)=>{let line=NaN,status='';if(c.kind==='ingredient'){const info=ingredientCostInfo(ingredients.find(i=>i.id===c.id),c.quantity,c.unit);line=info.cost;status=info.note||info.status}else if(c.kind==='bulk'){const r=prepared.find(x=>x.id===c.id),rc=recipeCost(r);if(Number.isFinite(rc)&&Number(r?.yield_quantity)>0&&unitInfo(r.yield_unit)[0]===unitInfo(c.unit)[0])line=rc*(baseQty(c.quantity,c.unit)/baseQty(r.yield_quantity,r.yield_unit));else status=Number.isFinite(rc)?'Unit mismatch':'Component cost incomplete'}return <div className="component" key={`${c.kind}-${c.id}-${n}`}><span><b>{c.name}</b><small>{c.kind==='bulk'?'Prepared Component':'Ingredient'}{status&&status!=='Ready'?' · '+status:''}</small></span><span>{c.quantity} {c.unit}</span><strong>{Number.isFinite(line)?money(line):(status||'Cost unavailable')}</strong><button onClick={()=>setEditor({...editor,components:editor.components.filter((_,x)=>x!==n)})}>×</button></div>})}<ComponentAdder isBulk={isBulk} ingredients={ingredients} prepared={prepared} units={units} onAdd={addEditorComponent} ingredientCostInfo={ingredientCostInfo}/></section><aside className="summary-card"><span>LIVE COST</span><h2>{editor.name||'Untitled'}</h2><div className="summary-big"><small>{isBulk?'Batch Cost':'Item Cost'}</small><b>{Number.isFinite(cost)?money(cost):'Incomplete'}</b></div>{isBulk?<><p><span>Yield</span><b>{editor.yield_quantity||'—'} {editor.yield_unit}</b></p><p><span>Cost / base unit</span><b>{Number.isFinite(cost)&&Number(editor.yield_quantity)>0?money(cost/baseQty(editor.yield_quantity,editor.yield_unit)):'—'}</b></p></>:<><p><span>Selling Price</span><b>{sell?money(sell):'—'}</b></p><p><span>Food Cost</span><b className={Number.isFinite(food)&&food>Number(editor.target_food_cost)?'bad':'good'}>{pct(food)}</b></p><p><span>Contribution</span><b>{sell&&Number.isFinite(cost)?money(sell-cost):'—'}</b></p><p><span>Target</span><b>{editor.target_food_cost}%</b></p></>}<small className="hint">Latest purchase prices are used automatically.</small></aside></div></div>}
