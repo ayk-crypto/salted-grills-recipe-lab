@@ -117,7 +117,7 @@ export async function GET() {
       previous_price:decoratePrice(i.previous_price,i,conversionMap),
       costing_conversions:costingConversions.filter(c=>String(c.ingredient_id)===String(i.id))
     }));
-    const packaging = await sql`SELECT * FROM packaging_items WHERE is_active = true ORDER BY name`;
+    const packaging = await sql`SELECT * FROM packaging_items WHERE tenant_id=${tid} AND is_active = true ORDER BY name`;
     const units = await sql`SELECT * FROM measurement_units WHERE is_active = true ORDER BY unit_group NULLS LAST, name`;
     const categories = await sql`
       SELECT c.*,EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='category' AND ef.entity_id=c.id) AS is_flagged
@@ -142,6 +142,36 @@ export async function GET() {
       WHERE r.is_active = true AND r.tenant_id=${tid}
       ORDER BY r.updated_at DESC, r.name
     `;
+    const packagingSets=await sql`
+      SELECT ps.id,ps.name,ps.notes,
+        COALESCE((SELECT json_agg(json_build_object('packaging_item_id',pi.id,'name',pi.name,'quantity',psi.quantity,'unit_cost',pi.unit_cost,'source_type',pi.source_type) ORDER BY pi.name)
+          FROM packaging_set_items psi JOIN packaging_items pi ON pi.id=psi.packaging_item_id
+          WHERE psi.packaging_set_id=ps.id AND pi.tenant_id=${tid} AND pi.is_active=TRUE),'[]'::json) AS items,
+        COALESCE((SELECT sum(psi.quantity*pi.unit_cost) FROM packaging_set_items psi JOIN packaging_items pi ON pi.id=psi.packaging_item_id WHERE psi.packaging_set_id=ps.id AND pi.tenant_id=${tid} AND pi.is_active=TRUE),0) AS total_cost
+      FROM packaging_sets ps WHERE ps.tenant_id=${tid} AND ps.is_active=TRUE ORDER BY ps.name
+    `;
+    const categoryPackaging=await sql`
+      SELECT cpd.category_id,cpd.packaging_set_id,c.name AS category_name
+      FROM category_packaging_defaults cpd JOIN categories c ON c.id=cpd.category_id
+      WHERE cpd.tenant_id=${tid} AND cpd.order_type='default'
+    `;
+    const recipePackaging=await sql`
+      SELECT recipe_id,packaging_set_id
+      FROM recipe_packaging_defaults
+      WHERE tenant_id=${tid} AND order_type='default'
+    `;
+    const setMap=new Map(packagingSets.map(x=>[String(x.id),x]));
+    const categoryByName=new Map(categories.map(x=>[String(x.name||'').toLowerCase(),x]));
+    const categoryDefaultMap=new Map(categoryPackaging.map(x=>[String(x.category_id),String(x.packaging_set_id)]));
+    const recipeDefaultMap=new Map(recipePackaging.map(x=>[String(x.recipe_id),String(x.packaging_set_id)]));
+    const recipesWithPackaging=recipes.map(r=>{
+      const overrideId=recipeDefaultMap.get(String(r.id));
+      const cat=categoryByName.get(String(r.category||'').toLowerCase());
+      const inheritedId=cat?categoryDefaultMap.get(String(cat.id)):null;
+      const setId=overrideId||inheritedId||null;
+      return {...r,packaging_set_id:setId,packaging_source:overrideId?'menu':inheritedId?'category':null,packaging_set:setId?setMap.get(String(setId))||null:null};
+    });
+
     const rawPrices = await sql`
       SELECT ip.id,ip.ingredient_id,ip.purchase_quantity,ip.purchase_unit,ip.purchase_price,ip.price_date,ip.supplier,ip.source,ip.source_metadata,i.name AS ingredient_name,
              EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='price' AND ef.entity_id=ip.id) AS is_flagged
@@ -151,7 +181,7 @@ export async function GET() {
     `;
     const ingredientMap=new Map(ingredientRows.map(i=>[String(i.id),i]));
     const prices=rawPrices.map(p=>({...p,...priceDerived(p,ingredientMap.get(String(p.ingredient_id))||{id:p.ingredient_id,default_unit:p.purchase_unit},conversionMap)}));
-    return NextResponse.json({tenant:{id:tenant.id,name:tenant.name,slug:tenant.slug},ingredients, packaging, units, categories, recipes, prices, costing_conversions:costingConversions});
+    return NextResponse.json({tenant:{id:tenant.id,name:tenant.name,slug:tenant.slug},ingredients, packaging, packaging_sets:packagingSets, category_packaging_defaults:categoryPackaging, recipe_packaging_defaults:recipePackaging, units, categories, recipes:recipesWithPackaging, prices, costing_conversions:costingConversions});
   } catch (e) {
     return NextResponse.json({error: e.message}, {status: 500});
   }
