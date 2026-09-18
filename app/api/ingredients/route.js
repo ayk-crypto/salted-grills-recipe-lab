@@ -38,9 +38,17 @@ export async function POST(req){
 
 export async function PATCH(req){
   try{
-    const body=await req.json();if(!body.id)return NextResponse.json({error:"Ingredient id is required"},{status:400});
+    const body=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    if(Array.isArray(body.ids)){
+      const ids=body.ids.map(String).filter(Boolean);
+      if(!ids.length)return NextResponse.json({error:"Select at least one ingredient"},{status:400});
+      const category=clean(body.ingredient_category);
+      if(!category)return NextResponse.json({error:"Category is required"},{status:400});
+      const rows=await sql`UPDATE ingredients SET ingredient_category=${category},updated_at=NOW() WHERE tenant_id=${tid} AND is_active=TRUE AND id = ANY(${ids}::uuid[]) RETURNING id,name,ingredient_category`;
+      return NextResponse.json({ok:true,updatedCount:rows.length,rows});
+    }
+    if(!body.id)return NextResponse.json({error:"Ingredient id is required"},{status:400});
     const name=clean(body.name);if(!name)return NextResponse.json({error:"Name is required"},{status:400});
-    const sql=db(),tenant=await requireTenant(),tid=tenant.id;
     const [dupe]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${name}) AND id<>${body.id} LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An ingredient with this name already exists"},{status:409});
     const [row]=await sql`UPDATE ingredients SET name=${name},default_unit=${body.default_unit||"g"},ingredient_type=${body.ingredient_type||"raw"},ingredient_category=${clean(body.ingredient_category)||null},notes=${body.notes||null},updated_at=now() WHERE id=${body.id} AND tenant_id=${tid} AND is_active=true RETURNING *`;

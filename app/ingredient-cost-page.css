@@ -14,3 +14,6 @@
 @media(max-width:760px){.ingredient-filter-grid{grid-template-columns:1fr}.ingredient-search-row{grid-template-columns:1fr}.ingredient-list-meta{align-items:flex-start;flex-direction:column}.ingredient-list-meta>div{width:100%}.bulk-delete{width:100%}}
 
 .ingredient-category-help{display:block;margin:-2px 0 2px;color:#7b817c;font-size:8px;line-height:1.45}
+
+.bulk-category-control{display:flex;align-items:center;gap:6px}.bulk-category-control input{height:31px;min-width:190px;border:1px solid #d9d2c7;background:#fff;border-radius:8px;padding:0 9px;font-size:8.5px}.bulk-category-control button{height:31px;border:1px solid #536b3c;background:#536b3c;color:#fff;border-radius:8px;padding:0 10px;font-size:8px;font-weight:850}.bulk-category-control button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:760px){.ingredient-list-meta>div{display:grid;width:100%;gap:6px}.bulk-category-control{display:grid;grid-template-columns:1fr auto}.bulk-category-control input{min-width:0;width:100%}}
