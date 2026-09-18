@@ -23,7 +23,7 @@ export default function IngredientCostPage(){
  const [yieldItem,setYieldItem]=useState(null),[yieldQty,setYieldQty]=useState(''),[yieldUnit,setYieldUnit]=useState('g'),[saving,setSaving]=useState(false);
  const [editItem,setEditItem]=useState(null),[notice,setNotice]=useState('');
  async function load(){setLoading(true);setError('');try{const r=await fetch('/api/bootstrap',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Could not load ingredients');setData(j)}catch(e){setError(e.message)}finally{setLoading(false)}}
- useEffect(()=>{load()},[]);
+ useEffect(()=>{load();const refreshCosting=()=>load(),storageRefresh=e=>{if(e.key==='platecost:costing-updated')load()};window.addEventListener('platecost:costing-updated',refreshCosting);window.addEventListener('storage',storageRefresh);return()=>{window.removeEventListener('platecost:costing-updated',refreshCosting);window.removeEventListener('storage',storageRefresh)}},[]);
  useEffect(()=>{document.body.classList.toggle('v2-nav-open',navOpen);return()=>document.body.classList.remove('v2-nav-open')},[navOpen]);
  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),2600);return()=>clearTimeout(t)},[notice]);
  const rows=useMemo(()=>data.ingredients.map(i=>buildRow(i,data.recipes||[])),[data]);
