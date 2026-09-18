@@ -15,6 +15,26 @@ export async function POST(req){
   const byId=new Map(rows.map(x=>[String(x.shelfSenseItemId||x.itemId||x.id||x.externalItemId),x]));
   let added=0,updated=0,missing=0;const results=[];
   for(const id of ids){
+    const [ingredientMapping]=await sql`
+      SELECT m.ingredient_id,i.name
+      FROM ingredient_source_mappings m
+      JOIN ingredients i ON i.id=m.ingredient_id AND i.tenant_id=m.tenant_id
+      WHERE m.tenant_id=${tenant.id} AND m.integration_id=${integration.id}
+        AND m.external_item_id=${id} AND m.source_type='shelfsense' AND m.is_active=TRUE
+      LIMIT 1`;
+    if(ingredientMapping){
+      const [usage]=await sql`
+        SELECT count(*)::int AS count
+        FROM recipes r
+        JOIN recipe_versions rv ON rv.id=r.current_version_id
+        JOIN recipe_components rc ON rc.recipe_version_id=rv.id
+        WHERE r.tenant_id=${tenant.id} AND r.is_active=TRUE AND rc.ingredient_id=${ingredientMapping.ingredient_id}`;
+      if((usage?.count||0)>0){
+        return NextResponse.json({error:`${ingredientMapping.name} is used in ${usage.count} active recipe${usage.count===1?'':'s'}. Remove it from those recipes before changing it to Packaging.`},{status:409});
+      }
+      await sql`UPDATE ingredient_source_mappings SET is_active=FALSE,updated_at=NOW() WHERE tenant_id=${tenant.id} AND ingredient_id=${ingredientMapping.ingredient_id}`;
+      await sql`UPDATE ingredients SET is_active=FALSE,updated_at=NOW() WHERE tenant_id=${tenant.id} AND id=${ingredientMapping.ingredient_id}`;
+    }
     const x=byId.get(id);
     if(!x){missing++;results.push({id,status:"missing"});continue}
     const name=String(x.itemName||x.name||"").trim();if(!name){missing++;continue}
