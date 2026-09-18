@@ -6,10 +6,10 @@ export async function GET(){
  try{
   const t=await requireTenant(),sql=db();
   const [categories,recipes]=await Promise.all([
-   sql`SELECT cpd.category_id,cpd.packaging_set_id,c.name AS category_name,ps.name AS set_name
+   sql`SELECT cpd.category_id,cpd.packaging_set_id,cpd.order_type,c.name AS category_name,ps.name AS set_name
        FROM category_packaging_defaults cpd JOIN categories c ON c.id=cpd.category_id JOIN packaging_sets ps ON ps.id=cpd.packaging_set_id
        WHERE cpd.tenant_id=${t.id}`,
-   sql`SELECT rpd.recipe_id,rpd.packaging_set_id,r.name AS recipe_name,ps.name AS set_name
+   sql`SELECT rpd.recipe_id,rpd.packaging_set_id,rpd.order_type,r.name AS recipe_name,ps.name AS set_name
        FROM recipe_packaging_defaults rpd JOIN recipes r ON r.id=rpd.recipe_id JOIN packaging_sets ps ON ps.id=rpd.packaging_set_id
        WHERE rpd.tenant_id=${t.id}`
   ]);
