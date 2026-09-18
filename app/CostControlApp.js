@@ -18,7 +18,7 @@ export default function CostControlApp(){
  const ingredients=data.ingredients||[], prepared=(data.recipes||[]).filter(r=>r.recipe_type==='bulk'), menus=(data.recipes||[]).filter(r=>r.recipe_type==='menu');
  const units=[...new Set([...(data.units||[]).map(x=>x.symbol).filter(Boolean),...U])];
  async function load(){setLoading(true);try{const [r,sr,cr]=await Promise.all([fetch('/api/bootstrap',{cache:'no-store'}),fetch('/api/costing-snapshots',{cache:'no-store'}),fetch('/api/cost-model',{cache:'no-store'})]);const [j,sj,cj]=await Promise.all([r.json(),sr.json(),cr.json()]);if(!j.error)setData(j);if(!sj.error)setSnapshots(sj.snapshots||[]);if(!cj.error&&cj.model)setCostModel(cj.model);if(cj?.tenant?.name)setWorkspaceName(cj.tenant.name)}finally{setLoading(false)}}
- useEffect(()=>{load();const refreshCosting=()=>load();window.addEventListener('platecost:costing-updated',refreshCosting);return()=>window.removeEventListener('platecost:costing-updated',refreshCosting)},[]);
+ useEffect(()=>{load();const refreshCosting=()=>load(),storageRefresh=e=>{if(e.key==='platecost:costing-updated')load()};window.addEventListener('platecost:costing-updated',refreshCosting);window.addEventListener('storage',storageRefresh);return()=>{window.removeEventListener('platecost:costing-updated',refreshCosting);window.removeEventListener('storage',storageRefresh)}},[]);
  useEffect(()=>{setQ('');setModal(null)},[path]);
  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),2600);return()=>clearTimeout(t)},[toast]);
 
