@@ -1,0 +1,2 @@
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS ingredient_category TEXT;
+CREATE INDEX IF NOT EXISTS ingredients_tenant_category_idx ON ingredients(tenant_id,ingredient_category) WHERE is_active=TRUE;
