@@ -24,7 +24,7 @@ export default function CostControlApp(){
 
  function currentSection(){if(path.startsWith('/ingredients'))return'ingredients';if(path.startsWith('/purchase-prices'))return'prices';if(path.startsWith('/prepared-components')||path.startsWith('/bulk-recipes'))return'prepared';if(path.startsWith('/menu-costing')||path.startsWith('/menu-items'))return'menu';if(path.startsWith('/cost-analysis'))return'analysis';if(path.startsWith('/categories'))return'categories';return'dashboard'}
  const section=currentSection();
- function go(s){const m={dashboard:'/',ingredients:'/ingredients',prices:'/purchase-prices',prepared:'/prepared-components',menu:'/menu-costing',analysis:'/cost-analysis',categories:'/categories',settings:'/settings'};router.push(m[s])}
+ function go(s){const m={dashboard:'/',ingredients:'/ingredients',prices:'/purchase-prices',prepared:'/prepared-components',packaging:'/packaging',menu:'/menu-costing',analysis:'/cost-analysis',categories:'/categories',settings:'/settings'};router.push(m[s])}
 
  function ingredientCost(i,qty,unit){const p=i?.latest_price;if(!p)return NaN;const a=unitInfo(p.purchase_unit),b=unitInfo(unit);if(a[0]!==b[0])return NaN;const purchased=baseQty(p.purchase_quantity,p.purchase_unit);return purchased?Number(p.purchase_price)*(baseQty(qty,unit)/purchased):NaN}
  function recipeCost(r,stack=[]){if(!r||stack.includes(r.id))return NaN;let total=0;for(const c of r.components_summary||[]){let v=NaN;if(c.ingredient_id)v=ingredientCost(ingredients.find(i=>i.id===c.ingredient_id),c.quantity,c.unit);else if(c.bulk_recipe_id){const b=prepared.find(x=>x.id===c.bulk_recipe_id),bc=recipeCost(b,[...stack,r.id]);if(Number.isFinite(bc)&&Number(b?.yield_quantity)>0&&unitInfo(b.yield_unit)[0]===unitInfo(c.unit)[0])v=bc*(baseQty(c.quantity,c.unit)/baseQty(b.yield_quantity,b.yield_unit))}if(!Number.isFinite(v))return NaN;total+=v}return total}
@@ -47,7 +47,7 @@ export default function CostControlApp(){
  async function saveEditor(){if(!editor?.name.trim())return alert('Name is required');if(editor.type==='bulk'&&!(Number(editor.yield_quantity)>0))return alert('Usable batch yield is required');if(editor.type==='menu'&&!editor.category)return alert('Select a category');setSaving(true);const body={name:editor.name,recipe_type:editor.type,category:editor.type==='menu'?editor.category:null,yield_quantity:editor.type==='bulk'?editor.yield_quantity:null,yield_unit:editor.type==='bulk'?editor.yield_unit:null,selling_price:editor.selling_price,target_food_cost:editor.target_food_cost,status:'recorded',components:editor.components};const r=await fetch(editor.id?`/api/recipes/${editor.id}`:'/api/recipes',{method:editor.id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),j=await r.json();setSaving(false);if(!r.ok)return alert(j.error||'Could not save');setEditor(null);setToast('Saved');await load();router.push(editor.type==='bulk'?'/prepared-components':'/menu-costing')}
  function addEditorComponent(kind,id,qty,unit){const src=kind==='bulk'?prepared.find(x=>x.id===id):ingredients.find(x=>x.id===id);if(!src||!(Number(qty)>0))return;setEditor(x=>({...x,components:[...x.components,{kind,id,name:src.name,quantity:Number(qty),unit}]}))}
 
- const nav=[['dashboard','Overview'],['ingredients','Ingredients'],['prices','Purchase Prices'],['prepared','Bulk Recipes'],['menu','Menu Costing'],['analysis','Cost Analysis'],['categories','Categories'],['settings','Settings']];
+ const nav=[['dashboard','Overview'],['ingredients','Ingredients'],['prices','Purchase Prices'],['prepared','Bulk Recipes'],['packaging','Packaging'],['menu','Menu Costing'],['analysis','Cost Analysis'],['categories','Categories'],['settings','Settings']];
  function Header({title,sub,actions}){return <><div className="v2-head"><div><span>COST CONTROL</span><h1>{title}</h1><p>{sub}</p></div><div className="v2-actions">{actions}</div></div></>}
  function Empty({children}){return <div className="v2-empty">{children}</div>}
 
@@ -133,7 +133,7 @@ function Shell({children,section,nav,go,workspaceName}){
  useEffect(()=>{setMenuOpen(false)},[section]);
  const groups=[
   {label:'HOME',keys:['dashboard']},
-  {label:'COST WORKFLOW',keys:['ingredients','prices','prepared','menu']},
+  {label:'COST WORKFLOW',keys:['ingredients','prices','prepared','packaging','menu']},
   {label:'INSIGHTS',keys:['analysis']},
   {label:'MANAGE',keys:['categories','settings']}
  ];
