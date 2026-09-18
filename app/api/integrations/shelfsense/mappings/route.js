@@ -50,6 +50,12 @@ export async function POST(req){
         if(!item){results.push({externalId,status:'error',error:'ShelfSense item not found'});continue}
         const kitchenUnit=String(choice.kitchen_unit||choice.kitchenUnit||'').trim();
         if(!allowedUnits.has(kitchenUnit)){results.push({externalId,name:item.name,status:'error',error:'Choose a recipe unit (g, ml, pc, kg or L)'});continue}
+        const [packaging]=await sql`SELECT id,name FROM packaging_items WHERE tenant_id=${tenant.id} AND integration_id=${integration.id} AND external_item_id=${externalId} AND source_type='shelfsense' AND is_active=TRUE LIMIT 1`;
+        if(packaging){
+          const [usage]=await sql`SELECT ((SELECT count(*) FROM packaging_set_items psi JOIN packaging_sets ps ON ps.id=psi.packaging_set_id WHERE psi.packaging_item_id=${packaging.id} AND ps.tenant_id=${tenant.id}) + (SELECT count(*) FROM recipe_packaging rp JOIN recipes r ON r.id=rp.recipe_id WHERE rp.packaging_item_id=${packaging.id} AND r.tenant_id=${tenant.id} AND r.is_active=TRUE))::int AS count`;
+          if((usage?.count||0)>0){results.push({externalId,name:item.name,status:'error',error:`${packaging.name} is already used as Packaging. Remove it from packaging sets/recipes before changing it to Ingredient.`});continue}
+          await sql`UPDATE packaging_items SET is_active=FALSE,updated_at=NOW() WHERE tenant_id=${tenant.id} AND id=${packaging.id}`;
+        }
         const [already]=await sql`SELECT ingredient_id FROM ingredient_source_mappings WHERE tenant_id=${tenant.id} AND integration_id=${integration.id} AND external_item_id=${externalId} AND is_active=TRUE LIMIT 1`;
         if(already){skipped++;results.push({externalId,name:item.name,status:'skipped',reason:'Already mapped'});continue}
         let [ingredient]=await sql`SELECT id,name,default_unit FROM ingredients WHERE tenant_id=${tenant.id} AND lower(name)=lower(${item.name}) LIMIT 1`;
