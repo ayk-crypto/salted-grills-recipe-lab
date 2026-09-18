@@ -74,8 +74,11 @@ export async function POST(req){
       let inserted=0;
       for(const l of ingredientLines){
         const m=meta(l.source_breakdown);
-        if(!m.changed)continue;
         if(!(Number(m.purchaseQuantity)>0)||!Number.isFinite(Number(m.purchasePrice))||!m.purchaseUnit)continue;
+        if(m.sourceExternalId){
+          const [existing]=await sql`SELECT id FROM ingredient_prices WHERE tenant_id=${tenant.id} AND ingredient_id=${l.entity_id}::uuid AND source='shelfsense' AND source_external_id=${String(m.sourceExternalId)} LIMIT 1`;
+          if(existing)continue;
+        }else if(!m.changed)continue;
         await sql`INSERT INTO ingredient_prices(tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,supplier,price_date,source,source_external_id,source_metadata) VALUES(${tenant.id},${l.entity_id}::uuid,${Number(m.purchaseQuantity)},${m.purchaseUnit},${Number(m.purchasePrice)},${m.supplier||'ShelfSense'},${m.priceDate||snapshot.snapshot_date}::date,'shelfsense',${m.sourceExternalId||null},${JSON.stringify({...m,publishedSnapshotId:snapshot.id,sourceBaseUnit:m.storageUnit||m.sourceBaseUnit,sourceUnitCost:m.storageUnitCost??m.sourceUnitCost})}::jsonb)`;
         inserted++;
       }
