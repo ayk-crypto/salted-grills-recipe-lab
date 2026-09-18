@@ -50,7 +50,7 @@ export default function SettingsNavigation(){
       settingsButton.dataset.settingsNav='1';
       settingsButton.textContent='Settings';
       settingsButton.addEventListener('click',()=>router.push('/settings'));
-      nav.appendChild(settingsButton);
+      const manageGroup=nav.querySelector('[data-nav-group="manage"]');\n      (manageGroup||nav).appendChild(settingsButton);
     }
     return()=>{cancelled=true;settingsButton?.remove()};
   },[path,router]);
