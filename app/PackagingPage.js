@@ -3,12 +3,20 @@ import {useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
 import "./packaging-page.css";
 
+const NAV_GROUPS=[
+ {label:"HOME",items:[["/","Overview"]]},
+ {label:"COST WORKFLOW",items:[["/ingredients","Ingredients"],["/purchase-prices","Purchase Prices"],["/prepared-components","Bulk Recipes"],["/packaging","Packaging"],["/menu-costing","Menu Costing"]]},
+ {label:"INSIGHTS",items:[["/cost-analysis","Cost Analysis"]]},
+ {label:"MANAGE",items:[["/categories","Categories"],["/settings","Settings"]]}
+];
+
 export default function PackagingPage(){
  const router=useRouter();
  const [data,setData]=useState({packaging:[],packaging_sets:[],categories:[],recipes:[],category_packaging_defaults:[],recipe_packaging_defaults:[],tenant:null});
- const [tab,setTab]=useState("items"),[q,setQ]=useState(""),[editing,setEditing]=useState(null),[setEdit,setSetEdit]=useState(null),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
+ const [tab,setTab]=useState("items"),[q,setQ]=useState(""),[editing,setEditing]=useState(null),[setEdit,setSetEdit]=useState(null),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false),[navOpen,setNavOpen]=useState(false);
  async function load(){const r=await fetch("/api/bootstrap",{cache:"no-store"}),j=await r.json();if(!j.error)setData(j)}
  useEffect(()=>{load()},[]);
+ useEffect(()=>{document.body.classList.toggle("v2-nav-open",navOpen);return()=>document.body.classList.remove("v2-nav-open")},[navOpen]);
  const items=(data.packaging||[]).filter(x=>x.name.toLowerCase().includes(q.toLowerCase()));
  const sets=(data.packaging_sets||[]).filter(x=>x.name.toLowerCase().includes(q.toLowerCase()));
  const menu=(data.recipes||[]).filter(x=>x.recipe_type==="menu");
@@ -18,7 +26,11 @@ export default function PackagingPage(){
  async function assign(kind,id,setId){setBusy(true);const body=kind==="category"?{category_id:id,packaging_set_id:setId||null}:{recipe_id:id,packaging_set_id:setId||null};const r=await fetch("/api/packaging/assignments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}),j=await r.json();setBusy(false);if(!r.ok)return setNotice(j.error||"Could not save default");setNotice("Packaging assignment updated.");await load()}
  const catMap=new Map((data.category_packaging_defaults||[]).map(x=>[String(x.category_id),String(x.packaging_set_id)]));
  const recipeMap=new Map((data.recipe_packaging_defaults||[]).map(x=>[String(x.recipe_id),String(x.packaging_set_id)]));
- return <div className="pkg-native-page">
+ return <div className="v2-shell">
+  <div className="v2-mobile-bar"><button type="button" className="v2-menu-toggle" aria-label={navOpen?"Close menu":"Open menu"} aria-expanded={navOpen} onClick={()=>setNavOpen(v=>!v)}><span></span><span></span><span></span></button><div><b>PlateCost</b><span>Packaging</span></div></div>
+  <button type="button" className={"v2-nav-backdrop "+(navOpen?"show":"")} onClick={()=>setNavOpen(false)} aria-label="Close menu"/>
+  <aside className={"v2-side "+(navOpen?"mobile-open":"")}><div className="brand"><div className="product-mark">PC</div><b className="product-name">PLATECOST</b><span className="product-tagline">RESTAURANT COST CONTROL</span><section className="workspace-switch"><small>WORKSPACE</small><strong>{data.tenant?.name||"Workspace"}</strong></section></div><nav>{NAV_GROUPS.map(g=><div className="v2-nav-group" data-nav-group={g.label.toLowerCase().replace(/\s+/g,"-")} key={g.label}><div className="v2-nav-group-title">{g.label}</div>{g.items.map(([href,label])=><button key={href} className={href==="/packaging"?"active":""} onClick={()=>{setNavOpen(false);router.push(href)}}>{label}</button>)}</div>)}</nav><footer><b>PlateCost</b><span>Restaurant costing</span></footer></aside>
+  <div className="v2-work"><div className="pkg-native-page">
   <header className="pkg-native-head"><div><span>COST WORKFLOW</span><h1>Packaging</h1><p>Keep packaging separate from food cost. Build reusable sets and assign them once by category or menu item.</p></div><button onClick={()=>router.push("/settings")}>ShelfSense Sync</button></header>
   {notice&&<div className="pkg-notice">{notice}</div>}
   <div className="pkg-tabs-native"><button className={tab==="items"?"active":""} onClick={()=>setTab("items")}>Packaging Items</button><button className={tab==="sets"?"active":""} onClick={()=>setTab("sets")}>Packaging Sets</button><button className={tab==="defaults"?"active":""} onClick={()=>setTab("defaults")}>Assignments</button></div>
@@ -28,5 +40,5 @@ export default function PackagingPage(){
   {tab==="defaults"&&<div className="pkg-assign-grid"><section><h3>Category Defaults</h3><p>New and existing menu items inherit this unless you override them.</p>{(data.categories||[]).map(c=><label key={c.id}><span><b>{c.name}</b><small>Category default</small></span><select value={catMap.get(String(c.id))||""} onChange={e=>assign("category",c.id,e.target.value)} disabled={busy}><option value="">No default</option>{data.packaging_sets.map(s=><option key={s.id} value={s.id}>{s.name} · Rs {Number(s.total_cost||0).toFixed(2)}</option>)}</select></label>)}</section><section><h3>Menu Item Overrides</h3><p>Only use this when an item needs packaging different from its category.</p>{menu.map(r=>{const inherited=r.packaging_source==="category"?r.packaging_set_id:"";return <label key={r.id}><span><b>{r.name}</b><small>{r.packaging_source==="category"?"Inherits "+(r.packaging_set?.name||"category default"):r.packaging_source==="menu"?"Menu override":"No packaging"}</small></span><select value={recipeMap.get(String(r.id))||""} onChange={e=>assign("recipe",r.id,e.target.value)} disabled={busy}><option value="">{inherited?"Use category default":"No override"}</option>{data.packaging_sets.map(s=><option key={s.id} value={s.id}>{s.name} · Rs {Number(s.total_cost||0).toFixed(2)}</option>)}</select></label>})}</section></div>}
   {editing&&<div className="pkg-native-modal" onMouseDown={e=>e.target===e.currentTarget&&setEditing(null)}><form onSubmit={saveItem}><header><h2>{editing.id?"Edit Packaging":"Add Packaging"}</h2><button type="button" onClick={()=>setEditing(null)}>×</button></header><label>Name<input name="name" defaultValue={editing.name||""} required/></label><div className="two"><label>Purchase quantity<input name="purchase_quantity" type="number" step="0.01" defaultValue={editing.purchase_quantity||""}/></label><label>Purchase unit<input name="purchase_unit" defaultValue={editing.purchase_unit||"pcs"}/></label></div><label>Purchase price<input name="purchase_price" type="number" step="0.01" defaultValue={editing.purchase_price||""}/></label><label>Notes<textarea name="notes" defaultValue={editing.notes||""}/></label><button className="primary" disabled={busy}>Save Packaging</button></form></div>}
   {setEdit&&<div className="pkg-native-modal" onMouseDown={e=>e.target===e.currentTarget&&setSetEdit(null)}><div className="set-editor"><header><h2>{setEdit.id?"Edit Packaging Set":"Add Packaging Set"}</h2><button onClick={()=>setSetEdit(null)}>×</button></header><label>Set name<input value={setEdit.name||""} onChange={e=>setSetEdit({...setEdit,name:e.target.value})} placeholder="e.g. Burger Takeaway Set"/></label><div className="set-adder"><select id="pkg-set-item"><option value="">Select packaging item</option>{data.packaging.map(i=><option value={i.id} key={i.id}>{i.name} · Rs {Number(i.unit_cost||0).toFixed(2)}</option>)}</select><input id="pkg-set-qty" type="number" min="0.01" step="0.01" defaultValue="1"/><button onClick={addSetItem}>Add</button></div><div className="set-lines">{(setEdit.items||[]).map((x,n)=><div key={x.packaging_item_id}><span><b>{x.name||data.packaging.find(i=>i.id===x.packaging_item_id)?.name}</b><small>Rs {Number(x.unit_cost||data.packaging.find(i=>i.id===x.packaging_item_id)?.unit_cost||0).toFixed(2)} each</small></span><input type="number" min="0.01" step="0.01" value={x.quantity} onChange={e=>setSetEdit(s=>({...s,items:s.items.map((y,i)=>i===n?{...y,quantity:e.target.value}:y)}))}/><button onClick={()=>setSetEdit(s=>({...s,items:s.items.filter((_,i)=>i!==n)}))}>×</button></div>)}</div><button className="primary" onClick={saveSet} disabled={busy}>Save Packaging Set</button></div></div>}
- </div>
+ </div></div></div>
 }
