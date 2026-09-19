@@ -13,7 +13,7 @@ function costFields(x){
  const qty=Number(x.enteredQuantity??x.receivedQuantity??x.purchaseQuantity??m.sourceEnteredQty??1);
  const purchaseUnit=String(x.enteredUnit||x.purchaseUnit||x.purchase_unit||m.sourceEnteredUnit||m.sourcePurchaseUnit||x.unit||"pc");
  const price=Number(x.receiptTotal??x.totalCost??x.receivedTotalCost??x.purchasePrice??m.sourceReceiptTotal??0);
- const storageUnit=String(x.baseUnit||x.storageUnit||x.issueUnit||m.sourceBaseUnit||m.sourceIssueUnit||purchaseUnit||"pc");
+ const storageUnit=String(x.baseUnit||x.storageUnit||x.issueUnit||m.baseUnit||m.storageUnit||m.issueUnit||m.sourceBaseUnit||m.sourceIssueUnit||purchaseUnit||"pc");
  const rawStorageCost=Number(x.unitCost??x.storageCost??m.sourceUnitCost??NaN);
  const effectiveQty=Number.isFinite(qty)&&qty>0?qty:1;
  const effectivePrice=Number.isFinite(price)&&price>=0?price:0;
