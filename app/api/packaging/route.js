@@ -4,13 +4,23 @@ import {requireTenant} from "../../tenant";
 
 const num=v=>{const n=Number(v);return Number.isFinite(n)&&n>=0?n:null};
 const unitCost=(qty,price)=>{const q=num(qty),p=num(price);return q&&q>0&&p!==null?p/q:null};
+const norm=v=>String(v||"").trim().toLowerCase();
+const isEachUnit=v=>['pc','pcs','piece','pieces','each'].includes(norm(v));
+const derivedCost=(storageUnit,storageCost,yieldQty)=>{
+ const c=num(storageCost),y=num(yieldQty);
+ if(c===null)return{unitCost:null,status:'missing_cost'};
+ if(isEachUnit(storageUnit))return{unitCost:c,status:'ready'};
+ if(y&&y>0)return{unitCost:c/y,status:'ready'};
+ return{unitCost:null,status:'needs_yield'};
+};
 
 export async function GET(){
  try{
   const tenant=await requireTenant(),sql=db();
   const rows=await sql`
     SELECT id,name,purchase_quantity,purchase_unit,purchase_price,unit_cost,notes,is_active,
-           source_type,external_item_id,source_metadata,last_source_sync_at
+           source_type,external_item_id,source_metadata,last_source_sync_at,
+           storage_unit,storage_unit_cost,units_per_storage_unit,costing_unit,costing_status
     FROM packaging_items
     WHERE tenant_id=${tenant.id} AND is_active=TRUE
     ORDER BY name
@@ -25,10 +35,11 @@ export async function POST(req){
   if(!name)return NextResponse.json({error:"Packaging name is required"},{status:400});
   const [dupe]=await sql`SELECT id FROM packaging_items WHERE tenant_id=${tenant.id} AND is_active=TRUE AND lower(name)=lower(${name}) LIMIT 1`;
   if(dupe)return NextResponse.json({error:"Packaging item already exists"},{status:409});
-  const uc=unitCost(b.purchase_quantity,b.purchase_price);
+  const storageCost=unitCost(b.purchase_quantity,b.purchase_price),storageUnit=b.purchase_unit||null;
+  const d=derivedCost(storageUnit,storageCost,b.units_per_storage_unit);
   const [row]=await sql`
-    INSERT INTO packaging_items(tenant_id,name,purchase_quantity,purchase_unit,purchase_price,unit_cost,notes,source_type)
-    VALUES(${tenant.id},${name},${b.purchase_quantity||null},${b.purchase_unit||null},${b.purchase_price||null},${uc},${b.notes||null},'manual')
+    INSERT INTO packaging_items(tenant_id,name,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost,units_per_storage_unit,costing_unit,costing_status,unit_cost,notes,source_type)
+    VALUES(${tenant.id},${name},${b.purchase_quantity||null},${b.purchase_unit||null},${b.purchase_price||null},${storageUnit},${storageCost},${b.units_per_storage_unit||null},'each',${d.status},${d.unitCost},${b.notes||null},'manual')
     RETURNING *`;
   return NextResponse.json(row,{status:201});
  }catch(e){return NextResponse.json({error:e.message},{status:500})}
@@ -39,10 +50,24 @@ export async function PUT(req){
   const tenant=await requireTenant(),sql=db(),b=await req.json();
   if(!b.id)return NextResponse.json({error:"Packaging id is required"},{status:400});
   const name=String(b.name||"").trim();if(!name)return NextResponse.json({error:"Packaging name is required"},{status:400});
-  const uc=unitCost(b.purchase_quantity,b.purchase_price);
+  const [existing]=await sql`SELECT source_type,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost FROM packaging_items WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE LIMIT 1`;
+  if(!existing)return NextResponse.json({error:"Packaging item not found"},{status:404});
+  const yieldQty=num(b.units_per_storage_unit);
+  if(existing.source_type==='shelfsense'){
+    const d=derivedCost(existing.storage_unit,existing.storage_unit_cost,yieldQty);
+    const [row]=await sql`
+      UPDATE packaging_items SET name=${name},units_per_storage_unit=${yieldQty},costing_unit='each',costing_status=${d.status},unit_cost=${d.unitCost},
+        notes=${b.notes||null},updated_at=NOW()
+      WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE
+      RETURNING *`;
+    return NextResponse.json(row);
+  }
+  const purchaseQty=b.purchase_quantity||null,purchaseUnit=b.purchase_unit||null,purchasePrice=b.purchase_price||null;
+  const storageCost=unitCost(purchaseQty,purchasePrice),d=derivedCost(purchaseUnit,storageCost,yieldQty);
   const [row]=await sql`
-    UPDATE packaging_items SET name=${name},purchase_quantity=${b.purchase_quantity||null},
-      purchase_unit=${b.purchase_unit||null},purchase_price=${b.purchase_price||null},unit_cost=${uc},
+    UPDATE packaging_items SET name=${name},purchase_quantity=${purchaseQty},
+      purchase_unit=${purchaseUnit},purchase_price=${purchasePrice},storage_unit=${purchaseUnit},storage_unit_cost=${storageCost},
+      units_per_storage_unit=${yieldQty},costing_unit='each',costing_status=${d.status},unit_cost=${d.unitCost},
       notes=${b.notes||null},updated_at=NOW()
     WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE
     RETURNING *`;

@@ -144,10 +144,11 @@ export async function GET() {
     `;
     const packagingSets=await sql`
       SELECT ps.id,ps.name,ps.notes,
-        COALESCE((SELECT json_agg(json_build_object('packaging_item_id',pi.id,'name',pi.name,'quantity',psi.quantity,'unit_cost',pi.unit_cost,'source_type',pi.source_type) ORDER BY pi.name)
+        COALESCE((SELECT json_agg(json_build_object('packaging_item_id',pi.id,'name',pi.name,'quantity',psi.quantity,'unit_cost',pi.unit_cost,'source_type',pi.source_type,'costing_status',pi.costing_status,'storage_unit',pi.storage_unit,'units_per_storage_unit',pi.units_per_storage_unit) ORDER BY pi.name)
           FROM packaging_set_items psi JOIN packaging_items pi ON pi.id=psi.packaging_item_id
           WHERE psi.packaging_set_id=ps.id AND pi.tenant_id=${tid} AND pi.is_active=TRUE),'[]'::json) AS items,
-        COALESCE((SELECT sum(psi.quantity*pi.unit_cost) FROM packaging_set_items psi JOIN packaging_items pi ON pi.id=psi.packaging_item_id WHERE psi.packaging_set_id=ps.id AND pi.tenant_id=${tid} AND pi.is_active=TRUE),0) AS total_cost
+        COALESCE((SELECT sum(psi.quantity*pi.unit_cost) FROM packaging_set_items psi JOIN packaging_items pi ON pi.id=psi.packaging_item_id WHERE psi.packaging_set_id=ps.id AND pi.tenant_id=${tid} AND pi.is_active=TRUE),0) AS total_cost,
+        COALESCE((SELECT count(*)::int FROM packaging_set_items psi JOIN packaging_items pi ON pi.id=psi.packaging_item_id WHERE psi.packaging_set_id=ps.id AND pi.tenant_id=${tid} AND pi.is_active=TRUE AND pi.costing_status<>'ready'),0) AS incomplete_count
       FROM packaging_sets ps WHERE ps.tenant_id=${tid} AND ps.is_active=TRUE ORDER BY ps.name
     `;
     const categoryPackaging=await sql`
