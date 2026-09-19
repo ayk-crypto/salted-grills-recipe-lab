@@ -1,4 +1,5 @@
 "use client";
+// Deploy manual packaging mapping
 // Deploy packaging ShelfSense sync refresh
 import {useEffect,useMemo,useState} from "react";
 import {useRouter} from "next/navigation";
