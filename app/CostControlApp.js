@@ -1,4 +1,5 @@
 "use client";
+// Deployment refresh: integrated menu costing tabs, packaging and channel costs.
 import {useEffect,useMemo,useRef,useState} from "react";
 import {usePathname,useRouter} from "next/navigation";
 
