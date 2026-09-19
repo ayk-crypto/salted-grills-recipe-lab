@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {db} from "../../../db";
 import {requireTenant} from "../../../tenant";
-import {fetchShelfSenseCosts,getShelfSenseIntegration} from "../../../integrations/shelfsense";
+import {fetchShelfSenseCosts,fetchShelfSenseItems,getShelfSenseIntegration} from "../../../integrations/shelfsense";
 
 function metadata(x){return x?.metadata||x?.source_metadata||{}}
 function norm(v){return String(v||"").trim().toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim()}
@@ -26,6 +26,28 @@ export async function POST(req){
   const remote=await fetchShelfSenseCosts(tenant.id);
   const rows=remote.costs||remote.rows||remote.items||[];
   const byId=new Map(rows.map(x=>[externalId(x),x]).filter(([id])=>id));
+
+  if(b.action==="manual_map"){
+    const packagingId=String(b.packaging_id||"").trim(),externalItemId=String(b.external_item_id||"").trim();
+    if(!packagingId||!externalItemId)return NextResponse.json({error:"Packaging item and ShelfSense item are required"},{status:400});
+    const [local]=await sql`SELECT id,name FROM packaging_items WHERE id=${packagingId} AND tenant_id=${tenant.id} AND is_active=TRUE LIMIT 1`;
+    if(!local)return NextResponse.json({error:"Packaging item not found"},{status:404});
+    const [conflict]=await sql`SELECT id,name FROM packaging_items WHERE tenant_id=${tenant.id} AND integration_id=${integration.id} AND external_item_id=${externalItemId} AND id<>${packagingId} AND is_active=TRUE LIMIT 1`;
+    if(conflict)return NextResponse.json({error:`That ShelfSense item is already mapped to ${conflict.name}.`},{status:409});
+
+    let x=byId.get(externalItemId)||null;
+    if(!x){
+      const remoteItems=await fetchShelfSenseItems(tenant.id),item=(remoteItems.items||[]).find(v=>String(v.id)===externalItemId);
+      if(!item)return NextResponse.json({error:"ShelfSense item not found"},{status:404});
+      x={...item,shelfSenseItemId:externalItemId};
+    }
+    const name=itemName(x)||local.name,{effectiveQty,unit,effectivePrice,effectiveUnitCost}=costFields(x);
+    await sql`UPDATE packaging_items SET purchase_quantity=${effectiveQty},purchase_unit=${unit},purchase_price=${effectivePrice},
+      unit_cost=${effectiveUnitCost},source_type='shelfsense',integration_id=${integration.id},external_item_id=${externalItemId},
+      source_metadata=${JSON.stringify(x)}::jsonb,last_source_sync_at=NOW(),is_active=TRUE,updated_at=NOW()
+      WHERE id=${packagingId} AND tenant_id=${tenant.id}`;
+    return NextResponse.json({ok:true,id:packagingId,name:local.name,shelfSenseName:name,external_item_id:externalItemId,unit_cost:effectiveUnitCost});
+  }
 
   if(b.action==="auto_sync"){
     const remoteByName=new Map(),duplicateNames=new Set();
