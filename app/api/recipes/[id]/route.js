@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, getRecipe } from "../../../db";
-import { requireTenant } from "../../../tenant";
+import {requireTenant,requireRole} from "../../../tenant";
 
 function costMeta(b){
   if((b.recipe_type||"menu")!=="menu") return b.kitchen_notes||null;
