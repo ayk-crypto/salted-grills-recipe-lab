@@ -3,6 +3,7 @@ import {db} from "../../../db";
 import {requireTenant,requireRole} from "../../../tenant";
 import {fetchShelfSenseCosts,fetchShelfSenseItems,getShelfSenseIntegration} from "../../../integrations/shelfsense";
 import {packagingEachCost} from "../../../lib/costing.mjs";
+import {readJson,uuid,list,oneOf,validationResponse} from "../../../lib/validation.mjs";
 
 function metadata(x){return x?.metadata||x?.source_metadata||{}}
 function norm(v){return String(v||"").trim().toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim()}
@@ -26,16 +27,15 @@ function costFields(x){
 function costing(storageUnit,storageCost,yieldQty){return packagingEachCost(storageCost,storageUnit,yieldQty)}
 export async function POST(req){
  try{
-  const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),ids=Array.isArray(b.external_item_ids)?b.external_item_ids.map(String):[];
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await readJson(req),action=oneOf(b.action||'selected',['manual_map','auto_sync','selected'],{field:'Action'}),ids=Array.isArray(b.external_item_ids)?list(b.external_item_ids,{field:'external_item_ids',max:1000}).map(x=>uuid(x,{field:'ShelfSense item id'})):[];
   const integration=await getShelfSenseIntegration(tenant.id);
   if(!integration)return NextResponse.json({error:"ShelfSense is not connected"},{status:400});
   const remote=await fetchShelfSenseCosts(tenant.id);
   const rows=remote.costs||remote.rows||remote.items||[];
   const byId=new Map(rows.map(x=>[externalId(x),x]).filter(([id])=>id));
 
-  if(b.action==="manual_map"){
-    const packagingId=String(b.packaging_id||"").trim(),externalItemId=String(b.external_item_id||"").trim();
-    if(!packagingId||!externalItemId)return NextResponse.json({error:"Packaging item and ShelfSense item are required"},{status:400});
+  if(action==="manual_map"){
+    const packagingId=uuid(b.packaging_id,{field:"Packaging item id"}),externalItemId=uuid(b.external_item_id,{field:"ShelfSense item id"});
     const [local]=await sql`SELECT id,name,COALESCE(storage_to_costing_factor,units_per_storage_unit) AS units_per_storage_unit FROM packaging_items WHERE id=${packagingId} AND tenant_id=${tenant.id} AND is_active=TRUE LIMIT 1`;
     if(!local)return NextResponse.json({error:"Packaging item not found"},{status:404});
     const [conflict]=await sql`SELECT id,name FROM packaging_items WHERE tenant_id=${tenant.id} AND integration_id=${integration.id} AND external_item_id=${externalItemId} AND id<>${packagingId} AND is_active=TRUE LIMIT 1`;
@@ -57,7 +57,7 @@ export async function POST(req){
     return NextResponse.json({ok:true,id:packagingId,name:local.name,shelfSenseName:name,external_item_id:externalItemId,unit_cost:derived.unitCost,costing_status:derived.status,storage_unit:storageUnit,storage_unit_cost:storageCost});
   }
 
-  if(b.action==="auto_sync"){
+  if(action==="auto_sync"){
     const remoteByName=new Map(),duplicateNames=new Set();
     for(const x of rows){
       const key=norm(itemName(x));if(!key)continue;
@@ -142,5 +142,5 @@ export async function POST(req){
     results.push({id,name,status:existing?"updated":"added"});
   }
   return NextResponse.json({ok:true,added,updated,missing,results});
- }catch(e){return NextResponse.json({error:e.message},{status:500})}
+ }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Packaging reconciliation failed"},{status:500})}
 }
