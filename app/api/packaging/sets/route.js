@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {db} from "../../../db";
-import {requireTenant} from "../../../tenant";
+import {requireTenant,requireRole} from "../../../tenant";
 
 async function list(sql,tid){
  return sql`
@@ -14,7 +14,7 @@ async function list(sql,tid){
 export async function GET(){try{const t=await requireTenant(),sql=db();return NextResponse.json({sets:await list(sql,t.id)})}catch(e){return NextResponse.json({error:e.message},{status:500})}}
 export async function POST(req){
  try{
-  const t=await requireTenant(),sql=db(),b=await req.json(),name=String(b.name||"").trim(),items=Array.isArray(b.items)?b.items:[];
+  const t=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),name=String(b.name||"").trim(),items=Array.isArray(b.items)?b.items:[];
   if(!name)return NextResponse.json({error:"Set name is required"},{status:400});
   const [set]=await sql`INSERT INTO packaging_sets(tenant_id,name,notes) VALUES(${t.id},${name},${b.notes||null}) RETURNING *`;
   for(const x of items){if(!x.packaging_item_id||!(Number(x.quantity)>0))continue;const [owned]=await sql`SELECT id FROM packaging_items WHERE id=${x.packaging_item_id} AND tenant_id=${t.id} AND is_active=TRUE`;if(!owned)continue;await sql`INSERT INTO packaging_set_items(packaging_set_id,packaging_item_id,quantity) VALUES(${set.id},${x.packaging_item_id},${Number(x.quantity)})`}
@@ -23,7 +23,7 @@ export async function POST(req){
 }
 export async function PUT(req){
  try{
-  const t=await requireTenant(),sql=db(),b=await req.json(),name=String(b.name||"").trim();
+  const t=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),name=String(b.name||"").trim();
   if(!b.id||!name)return NextResponse.json({error:"Set id and name are required"},{status:400});
   const [set]=await sql`UPDATE packaging_sets SET name=${name},notes=${b.notes||null},updated_at=NOW() WHERE id=${b.id} AND tenant_id=${t.id} AND is_active=TRUE RETURNING *`;
   if(!set)return NextResponse.json({error:"Packaging set not found"},{status:404});
@@ -33,5 +33,5 @@ export async function PUT(req){
  }catch(e){return NextResponse.json({error:e.message},{status:500})}
 }
 export async function DELETE(req){
- try{const t=await requireTenant(),sql=db(),{id}=await req.json();if(!id)return NextResponse.json({error:"Set id required"},{status:400});await sql`UPDATE packaging_sets SET is_active=FALSE,updated_at=NOW() WHERE id=${id} AND tenant_id=${t.id}`;return NextResponse.json({ok:true})}catch(e){return NextResponse.json({error:e.message},{status:500})}
+ try{const t=await requireRole(['owner','admin','manager']),sql=db(),{id}=await req.json();if(!id)return NextResponse.json({error:"Set id required"},{status:400});await sql`UPDATE packaging_sets SET is_active=FALSE,updated_at=NOW() WHERE id=${id} AND tenant_id=${t.id}`;return NextResponse.json({ok:true})}catch(e){return NextResponse.json({error:e.message},{status:500})}
 }
