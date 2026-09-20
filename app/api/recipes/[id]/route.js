@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { db, getRecipe } from "../../../db";
 import {requireTenant,requireRole} from "../../../tenant";
@@ -36,7 +37,7 @@ export async function DELETE(req,{params}){
 }
 
 export async function PUT(req,{params}){
-  const {id}=await params,b=await req.json(),sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;let version=null;
+  const {id}=await params,b=await req.json(),sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;
   try{
     const [recipeState]=await sql`SELECT is_active FROM recipes WHERE id=${id} AND tenant_id=${tid}`;
     if(!recipeState||!recipeState.is_active)return NextResponse.json({error:"Item not found"},{status:404});
@@ -44,23 +45,30 @@ export async function PUT(req,{params}){
     const [dupe]=await sql`SELECT id FROM recipes WHERE tenant_id=${tid} AND lower(name)=lower(${name}) AND id<>${id} LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An item with this name already exists"},{status:409});
     const [current]=await sql`SELECT COALESCE(MAX(version_no),0)::int AS max_version FROM recipe_versions WHERE recipe_id=${id}`;
-    const nextVersion=(current?.max_version||0)+1;
-    [version]=await sql`INSERT INTO recipe_versions (recipe_id,version_no,status,yield_quantity,yield_unit,prep_time_minutes,cook_time_minutes,kitchen_notes) VALUES (${id},${nextVersion},${b.status||"recorded"},${b.yield_quantity||null},${b.yield_unit||null},null,null,${costMeta(b)}) RETURNING *`;
-    for(let n=0;n<(b.components||[]).length;n++){
-      const c=b.components[n];if(!(Number(c.quantity)>0)||!c.id)continue;
-      if(c.kind==="ingredient"){
-        const [owned]=await sql`SELECT id FROM ingredients WHERE id=${c.id} AND tenant_id=${tid} AND is_active=true`;if(!owned)throw new Error("Ingredient does not belong to this tenant");
+    const nextVersion=(current?.max_version||0)+1,versionId=randomUUID();
+
+    const components=(b.components||[]).filter(x=>x?.id&&Number(x.quantity)>0);
+    for(const x of components){
+      if(x.kind==="ingredient"){
+        const [owned]=await sql`SELECT id FROM ingredients WHERE id=${x.id} AND tenant_id=${tid} AND is_active=TRUE`;if(!owned)return NextResponse.json({error:"Ingredient does not belong to this workspace"},{status:400});
       }else{
-        const [owned]=await sql`SELECT id FROM recipes WHERE id=${c.id} AND tenant_id=${tid} AND recipe_type='bulk' AND is_active=true`;if(!owned)throw new Error("Bulk recipe does not belong to this tenant");
+        const [owned]=await sql`SELECT id FROM recipes WHERE id=${x.id} AND tenant_id=${tid} AND recipe_type='bulk' AND is_active=TRUE`;if(!owned)return NextResponse.json({error:"Prepared component does not belong to this workspace"},{status:400});
       }
-      await sql`INSERT INTO recipe_components (recipe_version_id,sort_order,ingredient_id,bulk_recipe_id,quantity,unit,notes) VALUES (${version.id},${n},${c.kind==="ingredient"?c.id:null},${c.kind==="bulk"?c.id:null},${Number(c.quantity)},${c.unit},${c.notes||null})`;
     }
-    await sql`DELETE FROM recipe_packaging WHERE recipe_id=${id}`;
-    if((b.recipe_type||"menu")==="menu")for(const p of(b.packaging||[])){if(!p.packaging_item_id||!p.order_type||!(Number(p.quantity)>0))continue;const [ownedPackage]=await sql`SELECT id FROM packaging_items WHERE id=${p.packaging_item_id} AND tenant_id=${tid} AND is_active=TRUE`;if(!ownedPackage)throw new Error("Packaging item does not belong to this tenant");await sql`INSERT INTO recipe_packaging (recipe_id,order_type,packaging_item_id,quantity) VALUES (${id},${p.order_type},${p.packaging_item_id},${Number(p.quantity)})`;}
-    await sql`UPDATE recipes SET name=${name},recipe_type=${b.recipe_type||"menu"},category=${b.category||null},current_version_id=${version.id},updated_at=now() WHERE id=${id} AND tenant_id=${tid}`;
-    return NextResponse.json({version});
-  }catch(e){
-    if(version?.id){try{await sql`DELETE FROM recipe_versions WHERE id=${version.id} AND NOT EXISTS (SELECT 1 FROM recipes WHERE current_version_id=${version.id})`}catch{}}
-    return NextResponse.json({error:e.message},{status:500});
-  }
+    const packaging=(b.recipe_type||"menu")==="menu"?(b.packaging||[]).filter(x=>x?.packaging_item_id&&x?.order_type&&Number(x.quantity)>0):[];
+    for(const p of packaging){
+      const [owned]=await sql`SELECT id FROM packaging_items WHERE id=${p.packaging_item_id} AND tenant_id=${tid} AND is_active=TRUE`;
+      if(!owned)return NextResponse.json({error:"Packaging item does not belong to this workspace"},{status:400});
+    }
+
+    const queries=[
+      sql`INSERT INTO recipe_versions (id,recipe_id,version_no,status,yield_quantity,yield_unit,prep_time_minutes,cook_time_minutes,kitchen_notes) VALUES (${versionId},${id},${nextVersion},${b.status||"recorded"},${b.yield_quantity||null},${b.yield_unit||null},null,null,${costMeta(b)})`
+    ];
+    components.forEach((x,n)=>queries.push(sql`INSERT INTO recipe_components (recipe_version_id,sort_order,ingredient_id,bulk_recipe_id,quantity,unit,notes) VALUES (${versionId},${n},${x.kind==="ingredient"?x.id:null},${x.kind==="bulk"?x.id:null},${Number(x.quantity)},${x.unit},${x.notes||null})`));
+    queries.push(sql`DELETE FROM recipe_packaging WHERE recipe_id=${id}`);
+    packaging.forEach(p=>queries.push(sql`INSERT INTO recipe_packaging (recipe_id,order_type,packaging_item_id,quantity) VALUES (${id},${p.order_type},${p.packaging_item_id},${Number(p.quantity)})`));
+    queries.push(sql`UPDATE recipes SET name=${name},recipe_type=${b.recipe_type||"menu"},category=${b.category||null},current_version_id=${versionId},updated_at=NOW() WHERE id=${id} AND tenant_id=${tid}`);
+    await sql.transaction(queries,{isolationLevel:"Serializable"});
+    return NextResponse.json({version:{id:versionId,version_no:nextVersion}});
+  }catch(e){return NextResponse.json({error:"Could not update recipe"},{status:500});}
 }
