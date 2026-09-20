@@ -1,14 +1,11 @@
 import {NextResponse} from "next/server";
 import {db} from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
+import {packagingEachCost} from "../../lib/costing.mjs";
 
 const num=v=>{const n=Number(v);return Number.isFinite(n)&&n>=0?n:null};
 const unitCost=(qty,price)=>{const q=num(qty),p=num(price);return q&&q>0&&p!==null?p/q:null};
-const norm=v=>String(v||"").trim().toLowerCase();
-const isEachUnit=v=>['pc','pcs','piece','pieces','each'].includes(norm(v));
-const derivedCost=(storageUnit,storageCost,yieldQty)=>{
- const c=num(storageCost),y=num(yieldQty);
- if(c===null)return{unitCost:null,status:'missing_cost'};
+const derivedCost=(storageUnit,storageCost,yieldQty)=>packagingEachCost(storageCost,storageUnit,yieldQty);
  if(isEachUnit(storageUnit))return{unitCost:c,status:'ready'};
  if(y&&y>0)return{unitCost:c/y,status:'ready'};
  return{unitCost:null,status:'needs_yield'};
