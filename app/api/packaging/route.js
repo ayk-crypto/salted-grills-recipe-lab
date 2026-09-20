@@ -6,10 +6,6 @@ import {packagingEachCost} from "../../lib/costing.mjs";
 const num=v=>{const n=Number(v);return Number.isFinite(n)&&n>=0?n:null};
 const unitCost=(qty,price)=>{const q=num(qty),p=num(price);return q&&q>0&&p!==null?p/q:null};
 const derivedCost=(storageUnit,storageCost,yieldQty)=>packagingEachCost(storageCost,storageUnit,yieldQty);
- if(isEachUnit(storageUnit))return{unitCost:c,status:'ready'};
- if(y&&y>0)return{unitCost:c/y,status:'ready'};
- return{unitCost:null,status:'needs_yield'};
-};
 
 export async function GET(){
  try{
