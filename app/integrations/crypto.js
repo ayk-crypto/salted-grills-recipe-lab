@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+// Production deployments prefer the dedicated integration key.
 
 function derive(raw){
   if(!raw)return null;
