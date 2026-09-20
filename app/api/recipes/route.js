@@ -4,6 +4,8 @@ import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
 import {readJson,list,validationResponse} from "../../lib/validation.mjs";
 import {validateRecipePayload} from "../../lib/recipe-validation.mjs";
+import {recordAudit} from "../../lib/audit.mjs";
+import {requestId,errorResponse} from "../../lib/api-errors.mjs";
 
 function menuFinancials(b){
   if((b.recipe_type||"menu")!=="menu")return{sellingPrice:null,targetFoodCost:35,deliveryCommissionPct:0,paymentFeePct:0,otherVariablePct:0,deliveryFixedCost:0};
@@ -51,9 +53,14 @@ async function importMenuRows(sql,rows,tid){
 }
 
 export async function POST(req){
-  try{
+  const rid=requestId(req);try{
     const raw=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
-    if(Array.isArray(raw.rows)&&(raw.import_type==="menu"||raw.type==="menu")){list(raw.rows,{field:"rows",max:2000});return NextResponse.json(await importMenuRows(sql,raw.rows,tid),{status:201});}
+    if(Array.isArray(raw.rows)&&(raw.import_type==="menu"||raw.type==="menu")){
+      list(raw.rows,{field:"rows",max:2000});
+      const result=await importMenuRows(sql,raw.rows,tid);
+      await recordAudit(sql,{tenant,action:"import",entityType:"menu",entityName:"Menu import",after:{created:result.created,updated:result.updated,skipped:result.skipped},metadata:{row_count:raw.rows.length},requestId:rid});
+      return NextResponse.json(result,{status:201});
+    }
     const b=validateRecipePayload(raw),name=b.name;
     const [dupe]=await sql`SELECT id FROM recipes WHERE tenant_id=${tid} AND lower(name)=lower(${name}) LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An item with this name already exists"},{status:409});
@@ -81,6 +88,7 @@ export async function POST(req){
     packaging.forEach(p=>queries.push(sql`INSERT INTO recipe_packaging (recipe_id,order_type,packaging_item_id,quantity) VALUES (${recipeId},${p.order_type},${p.packaging_item_id},${Number(p.quantity)})`));
     queries.push(sql`UPDATE recipes SET current_version_id=${versionId},updated_at=NOW() WHERE id=${recipeId} AND tenant_id=${tid}`);
     await sql.transaction(queries,{isolationLevel:"Serializable"});
+    await recordAudit(sql,{tenant,action:"create",entityType:b.recipe_type==="bulk"?"bulk_recipe":"menu_item",entityId:recipeId,entityName:name,after:{name,recipe_type:b.recipe_type,category:b.category,yield_quantity:b.yield_quantity,yield_unit:b.yield_unit,selling_price:b.selling_price,target_food_cost:b.target_food_cost,component_count:components.length,packaging_count:packaging.length},requestId:rid});
     return NextResponse.json({recipe:{id:recipeId,name,recipe_type:b.recipe_type||"menu",category:b.category||null},version:{id:versionId,version_no:1}},{status:201});
-  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Could not save recipe"},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/recipes",action:"create",fallback:"Could not save recipe"});}
 }

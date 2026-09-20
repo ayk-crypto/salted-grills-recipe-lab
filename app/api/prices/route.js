@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
 import {readJson,text,uuid,positive,dateOnly,list,validationResponse} from "../../lib/validation.mjs";
+import {recordAudit} from "../../lib/audit.mjs";
+import {requestId,errorResponse} from "../../lib/api-errors.mjs";
 
 function normalizeName(v){return String(v||"").trim().toLowerCase()}
 function validNumber(v){return Number.isFinite(Number(v))&&Number(v)>0}
 function blank(v){return v===null||v===undefined||String(v).trim()===""}
 
 export async function GET(req){
-  try{
+  const rid=requestId(req);try{
     const {searchParams}=new URL(req.url),ingredientId=searchParams.get("ingredient_id"),sql=db(),tenant=await requireTenant(),tid=tenant.id;
     if(ingredientId){
       const rows=await sql`SELECT ip.*,i.name AS ingredient_name FROM ingredient_prices ip JOIN ingredients i ON i.id=ip.ingredient_id AND i.tenant_id=${tid} WHERE ip.tenant_id=${tid} AND ip.ingredient_id=${ingredientId} ORDER BY ip.price_date DESC,ip.created_at DESC`;
@@ -16,11 +18,11 @@ export async function GET(req){
     }
     const rows=await sql`SELECT ip.*,i.name AS ingredient_name FROM ingredient_prices ip JOIN ingredients i ON i.id=ip.ingredient_id AND i.tenant_id=${tid} WHERE ip.tenant_id=${tid} ORDER BY ip.price_date DESC,ip.created_at DESC LIMIT 1000`;
     return NextResponse.json(rows);
-  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Price request failed"},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/prices",action:"list",fallback:"Price request failed"});}
 }
 
 export async function POST(req){
-  try{
+  const rid=requestId(req);try{
     const b=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     if(Array.isArray(b.rows)){list(b.rows,{field:"rows",max:3000});
       const ingredients=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} AND is_active=true ORDER BY name`;
@@ -40,7 +42,9 @@ export async function POST(req){
         const [created]=await sql`INSERT INTO ingredient_prices (tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,price_date,supplier,source) VALUES (${tid},${ingredient.id},${Number(row.purchase_quantity)},${unit},${Number(row.purchase_price)},${priceDate},${supplier},'excel') RETURNING *`;
         results.push({index,status:"imported",ingredient_name:ingredient.name,id:created.id});
       }
-      return NextResponse.json({imported:results.filter(r=>r.status==="imported").length,skipped:results.filter(r=>r.status==="skipped").length,errors:results.filter(r=>r.status==="error").length,results},{status:201});
+      const summary={imported:results.filter(r=>r.status==="imported").length,skipped:results.filter(r=>r.status==="skipped").length,errors:results.filter(r=>r.status==="error").length};
+      await recordAudit(sql,{tenant,action:"import",entityType:"ingredient_price",entityName:"Purchase price import",after:summary,metadata:{row_count:b.rows.length},requestId:rid});
+      return NextResponse.json({...summary,results},{status:201});
     }
     const ingredientId=uuid(b.ingredient_id,{field:"Ingredient id"});
     const purchaseQuantity=positive(b.purchase_quantity,{field:"Purchase quantity"});
@@ -49,9 +53,10 @@ export async function POST(req){
     const priceDate=dateOnly(b.price_date,{field:"Price date"})||new Date().toISOString().slice(0,10);
     const supplier=text(b.supplier,{field:"Supplier",max:160})||null;
     const source=text(b.source||"manual",{field:"Source",required:true,max:40});
-    const [owned]=await sql`SELECT id FROM ingredients WHERE id=${ingredientId} AND tenant_id=${tid} AND is_active=true`;
+    const [owned]=await sql`SELECT id,name FROM ingredients WHERE id=${ingredientId} AND tenant_id=${tid} AND is_active=true`;
     if(!owned)return NextResponse.json({error:"Ingredient not found"},{status:404});
     const [row]=await sql`INSERT INTO ingredient_prices (tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,price_date,supplier,source) VALUES (${tid},${ingredientId},${purchaseQuantity},${purchaseUnit},${purchasePrice},${priceDate},${supplier},${source}) RETURNING *`;
+    await recordAudit(sql,{tenant,action:"create",entityType:"ingredient_price",entityId:row.id,entityName:owned.name,after:{ingredient_id:ingredientId,purchase_quantity:purchaseQuantity,purchase_unit:purchaseUnit,purchase_price:purchasePrice,price_date:priceDate,supplier,source},requestId:rid});
     return NextResponse.json(row,{status:201});
-  }catch(e){return NextResponse.json({error:e.message},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/prices",action:"create",fallback:"Could not save purchase price"});}
 }

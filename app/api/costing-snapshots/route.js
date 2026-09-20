@@ -2,12 +2,14 @@ import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
+import {recordAudit} from "../../lib/audit.mjs";
+import {requestId,errorResponse} from "../../lib/api-errors.mjs";
 
 function meta(v){if(!v)return{};if(typeof v==='object')return v;try{return JSON.parse(v)||{}}catch{return{}}}
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:null}
 
-export async function GET(){
-  try{
+export async function GET(req){
+  const rid=requestId(req);try{
     const tenant=await requireTenant(),sql=db();
     const snapshots=await sql`
       SELECT s.id,s.snapshot_date,s.label,s.status,s.created_at,
@@ -25,11 +27,11 @@ export async function GET(){
       ORDER BY l.created_at
     `;
     return NextResponse.json({snapshots:snapshots.map(s=>({...s,summary:meta(s.summary),lines:lines.filter(l=>String(l.snapshot_id)===String(s.id)).map(l=>({...l,source_breakdown:meta(l.source_breakdown)}))}))});
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){return errorResponse(e,NextResponse,{requestId:rid,route:"/api/costing-snapshots",action:"list",fallback:"Could not load costing history"})}
 }
 
 export async function POST(req){
-  try{
+  const rid=requestId(req);try{
     const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json().catch(()=>({})),action=String(body.action||'');
 
     if(action==='create'){
@@ -58,6 +60,7 @@ export async function POST(req){
       queries.push(sql`INSERT INTO costing_snapshot_lines(snapshot_id,entity_type,entity_id,entity_name,cost,source_breakdown) VALUES(${snapshotId},'summary','summary','Summary',0,${JSON.stringify(summary)}::jsonb)`);
       queries.push(sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='success',last_sync_error=NULL,updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`);
       await sql.transaction(queries,{isolationLevel:"Serializable"});
+      await recordAudit(sql,{tenant,action:"create",entityType:"costing_snapshot",entityId:snapshotId,entityName:label,after:{status:"draft",snapshot_date:asOf,summary},metadata:{ingredient_count:ingredients.length,menu_count:menus.length},requestId:rid});
       return NextResponse.json({ok:true,snapshotId,status:'draft',summary,message:'Review snapshot created. Live costing was not changed.'});
     }
 
@@ -84,6 +87,7 @@ export async function POST(req){
       }
       queries.push(sql`UPDATE costing_snapshots SET status='published' WHERE id=${snapshot.id} AND tenant_id=${tenant.id}`);
       await sql.transaction(queries,{isolationLevel:"Serializable"});
+      await recordAudit(sql,{tenant,action:"publish",entityType:"costing_snapshot",entityId:snapshot.id,entityName:snapshot.label,before:{status:snapshot.status},after:{status:"published",inserted,needs_yield:Number(summary.needsYield||0)},requestId:rid});
       return NextResponse.json({ok:true,status:'published',inserted,needsYield:Number(summary.needsYield||0),snapshotId:snapshot.id});
     }
 
@@ -100,9 +104,10 @@ export async function POST(req){
       }
       queries.push(sql`UPDATE costing_snapshots SET status='published' WHERE id=${snapshot.id} AND tenant_id=${tenant.id}`);
       await sql.transaction(queries,{isolationLevel:"Serializable"});
+      await recordAudit(sql,{tenant,action:"restore",entityType:"costing_snapshot",entityId:snapshot.id,entityName:snapshot.label,before:{status:snapshot.status},after:{status:"published",restored},requestId:rid});
       return NextResponse.json({ok:true,status:'published',restored,snapshotId:snapshot.id});
     }
 
     return NextResponse.json({error:'Unsupported action'},{status:400});
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){return errorResponse(e,NextResponse,{requestId:rid,route:"/api/costing-snapshots",action:"change",fallback:"Costing snapshot operation failed"})}
 }
