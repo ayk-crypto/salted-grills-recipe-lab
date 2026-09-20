@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 const clean=v=>String(v||"").trim();
 const norm=v=>clean(v).toLowerCase();
 
 export async function POST(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    const body=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     if(Array.isArray(body.rows)){
       const existing=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} ORDER BY name`;
       const byName=new Map(existing.map(i=>[norm(i.name),i])),results=[];
@@ -38,7 +38,7 @@ export async function POST(req){
 
 export async function PATCH(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    const body=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     if(Array.isArray(body.ids)){
       const ids=body.ids.map(String).filter(Boolean);
       if(!ids.length)return NextResponse.json({error:"Select at least one ingredient"},{status:400});
@@ -59,7 +59,7 @@ export async function PATCH(req){
 
 export async function DELETE(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    const body=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     const requested=Array.isArray(body.ids)?body.ids.map(String).filter(Boolean):body.id?[String(body.id)]:[];
     if(!requested.length&&body.name){
       const [named]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${clean(body.name)}) LIMIT 1`;
