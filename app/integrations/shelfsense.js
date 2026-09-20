@@ -1,6 +1,18 @@
 import { db } from "../db.js";
 import { decryptCredential } from "./crypto.js";
 
+const DEFAULT_ALLOWED=["https://shelfsense-0qgb.onrender.com"];
+function allowedOrigins(){
+  return new Set([...DEFAULT_ALLOWED,...String(process.env.SHELFSENSE_ALLOWED_ORIGINS||"").split(",").map(x=>x.trim()).filter(Boolean)].map(x=>new URL(x).origin));
+}
+export function validateShelfSenseBaseUrl(value){
+  let u;try{u=new URL(String(value||""))}catch{throw new Error("Invalid ShelfSense URL")}
+  if(u.protocol!=="https:")throw new Error("ShelfSense URL must use HTTPS");
+  if(u.username||u.password||u.pathname!=="/"&&u.pathname!=="")throw new Error("ShelfSense URL must be an origin only");
+  if(!allowedOrigins().has(u.origin))throw new Error("ShelfSense host is not approved");
+  return u.origin;
+}
+
 export async function getShelfSenseIntegration(tenantId){
   const sql=db();
   const [row]=await sql`
@@ -20,7 +32,7 @@ export async function getShelfSenseIntegration(tenantId){
 }
 
 async function shelfSenseFetch(integration,path){
-  const base=String(integration.base_url||'').replace(/\/$/,'');
+  const base=validateShelfSenseBaseUrl(integration.base_url);
   const r=await fetch(`${base}${path}`,{
     headers:{Authorization:`Bearer ${integration.token}`},
     cache:'no-store',
