@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 function costMeta(b){
   if((b.recipe_type||"menu")!=="menu") return b.kitchen_notes||null;
@@ -39,7 +39,7 @@ async function importMenuRows(sql,rows,tid){
 }
 
 export async function POST(req){
-  const b=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;let recipe=null;
+  const b=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;let recipe=null;
   try{
     if(Array.isArray(b.rows)&&(b.import_type==="menu"||b.type==="menu"))return NextResponse.json(await importMenuRows(sql,b.rows,tid),{status:201});
     const name=String(b.name||"").trim();if(!name)return NextResponse.json({error:"Name is required"},{status:400});
