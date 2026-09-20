@@ -10,7 +10,8 @@ export async function getRecipe(id, tenantId) {
   const [recipe] = await sql`
     SELECT r.*, rv.id AS version_id, rv.version_no, rv.status,
            rv.yield_quantity, rv.yield_unit, rv.prep_time_minutes,
-           rv.cook_time_minutes, rv.kitchen_notes
+           rv.cook_time_minutes, rv.kitchen_notes, rv.selling_price, rv.target_food_cost,
+           rv.delivery_commission_pct, rv.payment_fee_pct, rv.other_variable_pct, rv.delivery_fixed_cost
     FROM recipes r
     LEFT JOIN recipe_versions rv ON rv.id = r.current_version_id
     WHERE r.id = ${id} AND r.tenant_id=${tenantId}
