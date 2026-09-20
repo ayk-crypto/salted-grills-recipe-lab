@@ -1,31 +1,34 @@
 import crypto from "node:crypto";
 
-function key(){
-  // Prefer a dedicated integration secret in SaaS deployments. The DATABASE_URL
-  // fallback keeps the current single-tenant production usable without storing
-  // third-party credentials in plaintext; set INTEGRATION_ENCRYPTION_KEY before
-  // onboarding external customers so credential rotation is independent of DB access.
-  const raw=process.env.INTEGRATION_ENCRYPTION_KEY||process.env.DATABASE_URL;
-  if(!raw) throw new Error("Integration encryption key is not configured");
-  return crypto.createHash("sha256").update(raw).digest();
+function derive(raw){
+  if(!raw)return null;
+  return crypto.createHash("sha256").update(String(raw)).digest();
 }
+function dedicatedKey(){return derive(process.env.INTEGRATION_ENCRYPTION_KEY)}
+function legacyKey(){return derive(process.env.DATABASE_URL)}
+
+export function hasDedicatedIntegrationKey(){return Boolean(process.env.INTEGRATION_ENCRYPTION_KEY)}
 
 export function encryptCredential(value){
+  const key=dedicatedKey()||legacyKey();
+  if(!key)throw new Error("Integration encryption key is not configured");
   const iv=crypto.randomBytes(12);
-  const cipher=crypto.createCipheriv("aes-256-gcm",key(),iv);
+  const cipher=crypto.createCipheriv("aes-256-gcm",key,iv);
   const encrypted=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]);
-  return {
-    ciphertext:encrypted.toString("base64"),
-    iv:iv.toString("base64"),
-    tag:cipher.getAuthTag().toString("base64"),
-  };
+  return {ciphertext:encrypted.toString("base64"),iv:iv.toString("base64"),tag:cipher.getAuthTag().toString("base64")};
 }
 
-export function decryptCredential({ciphertext,iv,tag}){
-  const decipher=crypto.createDecipheriv("aes-256-gcm",key(),Buffer.from(iv,"base64"));
+function decryptWith(key,{ciphertext,iv,tag}){
+  const decipher=crypto.createDecipheriv("aes-256-gcm",key,Buffer.from(iv,"base64"));
   decipher.setAuthTag(Buffer.from(tag,"base64"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ciphertext,"base64")),
-    decipher.final(),
-  ]).toString("utf8");
+  return Buffer.concat([decipher.update(Buffer.from(ciphertext,"base64")),decipher.final()]).toString("utf8");
 }
+
+export function decryptCredentialWithSource(payload){
+  const preferred=dedicatedKey();
+  if(preferred){try{return{value:decryptWith(preferred,payload),source:"dedicated"}}catch{}}
+  const legacy=legacyKey();
+  if(legacy){try{return{value:decryptWith(legacy,payload),source:"legacy"}}catch{}}
+  throw new Error("Could not decrypt integration credential");
+}
+export function decryptCredential(payload){return decryptCredentialWithSource(payload).value}
