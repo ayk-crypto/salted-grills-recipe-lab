@@ -125,6 +125,7 @@ export async function GET() {
     `;
     const recipes = await sql`
       SELECT r.*, rv.version_no, rv.status, rv.yield_quantity, rv.yield_unit, rv.kitchen_notes,
+             rv.selling_price,rv.target_food_cost,rv.delivery_commission_pct,rv.payment_fee_pct,rv.other_variable_pct,rv.delivery_fixed_cost,
              EXISTS(SELECT 1 FROM entity_flags ef WHERE ef.tenant_id=${tid} AND ef.entity_type='recipe' AND ef.entity_id=r.id) AS is_flagged,
              (SELECT count(*)::int FROM recipe_components rc WHERE rc.recipe_version_id = rv.id) AS component_count,
              COALESCE((
