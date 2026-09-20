@@ -1,5 +1,5 @@
 import { db } from "../db.js";
-import { decryptCredential } from "./crypto.js";
+import {decryptCredentialWithSource,encryptCredential,hasDedicatedIntegrationKey} from "./crypto.js";
 
 const DEFAULT_ALLOWED=["https://shelfsense-0qgb.onrender.com"];
 function allowedOrigins(){
@@ -21,14 +21,12 @@ export async function getShelfSenseIntegration(tenantId){
     LIMIT 1
   `;
   if(!row)return null;
-  return {
-    ...row,
-    token:decryptCredential({
-      ciphertext:row.credential_ciphertext,
-      iv:row.credential_iv,
-      tag:row.credential_tag,
-    }),
-  };
+  const decoded=decryptCredentialWithSource({ciphertext:row.credential_ciphertext,iv:row.credential_iv,tag:row.credential_tag});
+  if(decoded.source==="legacy"&&hasDedicatedIntegrationKey()){
+    const enc=encryptCredential(decoded.value);
+    await sql`UPDATE integrations SET credential_ciphertext=${enc.ciphertext},credential_iv=${enc.iv},credential_tag=${enc.tag},updated_at=NOW() WHERE id=${row.id} AND tenant_id=${tenantId}`;
+  }
+  return {...row,token:decoded.value,encryptionKeySource:decoded.source};
 }
 
 async function shelfSenseFetch(integration,path){
