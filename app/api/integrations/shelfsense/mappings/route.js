@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { db } from "../../../../db";
 import {requireTenant,requireRole} from "../../../../tenant";
 import { fetchShelfSenseItems, getShelfSenseIntegration } from "../../../../integrations/shelfsense";
+import {readJson,validationResponse} from "../../../../lib/validation.mjs";
+import {AppError,errorResponse,requestId} from "../../../../lib/api-errors.mjs";
 
 function norm(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
 
 export async function POST(req){
-  try{
+  const rid=requestId(req);try{
     const tenant=await requireRole(['owner','admin','manager']),sql=db();
-    const body=await req.json();
+    const body=await readJson(req);
     const integration=await getShelfSenseIntegration(tenant.id);
     if(!integration)return NextResponse.json({error:'ShelfSense is not connected'},{status:400});
 
@@ -120,8 +122,8 @@ export async function POST(req){
     return NextResponse.json({ok:true,source:'shelfsense',item});
   }catch(e){
     if(String(e.message||'').includes('ingredient_source_mappings_integration_id_external_item_id_key')){
-      return NextResponse.json({error:'That ShelfSense item is already mapped to another ingredient'},{status:409});
+      return errorResponse(new AppError("That ShelfSense item is already mapped to another ingredient",{status:409,code:"SHELFSENSE_ITEM_ALREADY_MAPPED"}),NextResponse,{requestId:rid,route:"/api/integrations/shelfsense/mappings",action:"save",fallback:"Could not save ShelfSense mapping"});
     }
-    return NextResponse.json({error:e.message},{status:500})
+    const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/integrations/shelfsense/mappings",action:"save",fallback:"Could not save ShelfSense mapping"})
   }
 }
