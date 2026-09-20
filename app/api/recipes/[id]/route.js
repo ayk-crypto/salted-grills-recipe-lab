@@ -4,6 +4,8 @@ import { db, getRecipe } from "../../../db";
 import {requireTenant,requireRole} from "../../../tenant";
 import {readJson,uuid,validationResponse} from "../../../lib/validation.mjs";
 import {validateRecipePayload} from "../../../lib/recipe-validation.mjs";
+import {recordAudit} from "../../../lib/audit.mjs";
+import {requestId,errorResponse} from "../../../lib/api-errors.mjs";
 
 function menuFinancials(b){
   if((b.recipe_type||"menu")!=="menu")return{sellingPrice:null,targetFoodCost:35,deliveryCommissionPct:0,paymentFeePct:0,otherVariablePct:0,deliveryFixedCost:0};
@@ -21,16 +23,16 @@ function menuFinancials(b){
 
 
 export async function GET(req,{params}){
-  try{
+  const rid=requestId(req);try{
     const raw=await params,id=uuid(raw.id,{field:"Recipe id"}),tenant=await requireTenant();
     const row=await getRecipe(id,tenant.id);
     if(!row||row.is_active===false)return NextResponse.json({error:"Not found"},{status:404});
     return NextResponse.json(row);
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/recipes/[id]",action:"get",fallback:"Could not load recipe"})}
 }
 
 export async function DELETE(req,{params}){
-  try{
+  const rid=requestId(req);try{
     const raw=await params,id=uuid(raw.id,{field:"Recipe id"}),sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;
     const [recipe]=await sql`SELECT id,name,recipe_type FROM recipes WHERE id=${id} AND tenant_id=${tid} AND is_active=true`;
     if(!recipe)return NextResponse.json({error:"Item not found"},{status:404});
@@ -44,13 +46,15 @@ export async function DELETE(req,{params}){
       if(usage.length)return NextResponse.json({error:`${recipe.name} is still used in ${usage.length} active item${usage.length===1?'':'s'}. Remove it from those items first.`,used_in:usage},{status:409});
     }
     const [deleted]=await sql`UPDATE recipes SET is_active=false,updated_at=now() WHERE id=${id} AND tenant_id=${tid} AND is_active=true RETURNING id,name,recipe_type`;
+    await recordAudit(sql,{tenant,action:"delete",entityType:recipe.recipe_type==="bulk"?"bulk_recipe":"menu_item",entityId:id,entityName:recipe.name,before:recipe,after:{is_active:false},requestId:rid});
     return NextResponse.json({ok:true,item:deleted});
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/recipes/[id]",action:"delete",fallback:"Could not delete recipe"})}
 }
 
 export async function PUT(req,{params}){
-  const {id}=await params,b=await req.json(),sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;
-  try{
+  const rid=requestId(req);try{
+    const rawParams=await params,id=uuid(rawParams.id,{field:"Recipe id"}),b=validateRecipePayload(await readJson(req)),sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;
+    const before=await getRecipe(id,tid);
     const [recipeState]=await sql`SELECT is_active FROM recipes WHERE id=${id} AND tenant_id=${tid}`;
     if(!recipeState||!recipeState.is_active)return NextResponse.json({error:"Item not found"},{status:404});
     const name=b.name;
@@ -81,6 +85,7 @@ export async function PUT(req,{params}){
     packaging.forEach(p=>queries.push(sql`INSERT INTO recipe_packaging (recipe_id,order_type,packaging_item_id,quantity) VALUES (${id},${p.order_type},${p.packaging_item_id},${Number(p.quantity)})`));
     queries.push(sql`UPDATE recipes SET name=${name},recipe_type=${b.recipe_type||"menu"},category=${b.category||null},current_version_id=${versionId},updated_at=NOW() WHERE id=${id} AND tenant_id=${tid}`);
     await sql.transaction(queries,{isolationLevel:"Serializable"});
+    await recordAudit(sql,{tenant,action:"update",entityType:b.recipe_type==="bulk"?"bulk_recipe":"menu_item",entityId:id,entityName:name,before:before?{name:before.name,recipe_type:before.recipe_type,category:before.category,yield_quantity:before.yield_quantity,yield_unit:before.yield_unit,selling_price:before.selling_price,target_food_cost:before.target_food_cost,component_count:(before.components||[]).length,packaging_count:(before.packaging||[]).length}:null,after:{name,recipe_type:b.recipe_type,category:b.category,yield_quantity:b.yield_quantity,yield_unit:b.yield_unit,selling_price:b.selling_price,target_food_cost:b.target_food_cost,component_count:components.length,packaging_count:packaging.length,version_no:nextVersion},requestId:rid});
     return NextResponse.json({version:{id:versionId,version_no:nextVersion}});
-  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Could not update recipe"},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return errorResponse(e,NextResponse,{requestId:rid,route:"/api/recipes/[id]",action:"update",fallback:"Could not update recipe"});}
 }
