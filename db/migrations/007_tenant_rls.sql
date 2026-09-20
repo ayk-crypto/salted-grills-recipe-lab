@@ -100,3 +100,8 @@ CREATE POLICY snapshot_lines_write ON public.costing_snapshot_lines FOR ALL TO a
 -- Currently server-only recipe workflow tables; no direct authenticated Data API policies.
 ALTER TABLE public.recipe_steps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recipe_photos ENABLE ROW LEVEL SECURITY;
+
+
+-- Global reference table: authenticated users may read active units; writes remain server/API controlled.
+ALTER TABLE public.measurement_units ENABLE ROW LEVEL SECURITY;
+CREATE POLICY measurement_units_read ON public.measurement_units FOR SELECT TO authenticated USING (is_active=TRUE);
