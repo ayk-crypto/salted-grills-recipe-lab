@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
+import {readJson,text,uuid,positive,dateOnly,list,validationResponse} from "../../lib/validation.mjs";
 
 function normalizeName(v){return String(v||"").trim().toLowerCase()}
 function validNumber(v){return Number.isFinite(Number(v))&&Number(v)>0}
@@ -15,13 +16,13 @@ export async function GET(req){
     }
     const rows=await sql`SELECT ip.*,i.name AS ingredient_name FROM ingredient_prices ip JOIN ingredients i ON i.id=ip.ingredient_id AND i.tenant_id=${tid} WHERE ip.tenant_id=${tid} ORDER BY ip.price_date DESC,ip.created_at DESC LIMIT 1000`;
     return NextResponse.json(rows);
-  }catch(e){return NextResponse.json({error:e.message},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Price request failed"},{status:500});}
 }
 
 export async function POST(req){
   try{
-    const b=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
-    if(Array.isArray(b.rows)){
+    const b=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
+    if(Array.isArray(b.rows)){list(b.rows,{field:"rows",max:3000});
       const ingredients=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} AND is_active=true ORDER BY name`;
       const byName=new Map(ingredients.map(i=>[normalizeName(i.name),i])),results=[];
       for(let index=0;index<b.rows.length;index++){
@@ -41,10 +42,16 @@ export async function POST(req){
       }
       return NextResponse.json({imported:results.filter(r=>r.status==="imported").length,skipped:results.filter(r=>r.status==="skipped").length,errors:results.filter(r=>r.status==="error").length,results},{status:201});
     }
-    if(!validNumber(b.purchase_quantity)||!validNumber(b.purchase_price)||!String(b.purchase_unit||"").trim())return NextResponse.json({error:"Quantity, unit and price are required"},{status:400});
-    const [owned]=await sql`SELECT id FROM ingredients WHERE id=${b.ingredient_id} AND tenant_id=${tid} AND is_active=true`;
+    const ingredientId=uuid(b.ingredient_id,{field:"Ingredient id"});
+    const purchaseQuantity=positive(b.purchase_quantity,{field:"Purchase quantity"});
+    const purchasePrice=positive(b.purchase_price,{field:"Purchase price"});
+    const purchaseUnit=text(b.purchase_unit,{field:"Purchase unit",required:true,max:40});
+    const priceDate=dateOnly(b.price_date,{field:"Price date"})||new Date().toISOString().slice(0,10);
+    const supplier=text(b.supplier,{field:"Supplier",max:160})||null;
+    const source=text(b.source||"manual",{field:"Source",required:true,max:40});
+    const [owned]=await sql`SELECT id FROM ingredients WHERE id=${ingredientId} AND tenant_id=${tid} AND is_active=true`;
     if(!owned)return NextResponse.json({error:"Ingredient not found"},{status:404});
-    const [row]=await sql`INSERT INTO ingredient_prices (tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,price_date,supplier,source) VALUES (${tid},${b.ingredient_id},${b.purchase_quantity},${b.purchase_unit},${b.purchase_price},${b.price_date||new Date().toISOString().slice(0,10)},${b.supplier||null},${b.source||'manual'}) RETURNING *`;
+    const [row]=await sql`INSERT INTO ingredient_prices (tenant_id,ingredient_id,purchase_quantity,purchase_unit,purchase_price,price_date,supplier,source) VALUES (${tid},${ingredientId},${purchaseQuantity},${purchaseUnit},${purchasePrice},${priceDate},${supplier},${source}) RETURNING *`;
     return NextResponse.json(row,{status:201});
   }catch(e){return NextResponse.json({error:e.message},{status:500});}
 }
