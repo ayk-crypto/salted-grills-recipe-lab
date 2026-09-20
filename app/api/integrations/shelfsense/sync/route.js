@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../../../db";
-import { requireTenant } from "../../../../tenant";
+import {requireTenant,requireRole} from "../../../../tenant";
 import { fetchShelfSenseCosts, getShelfSenseIntegration } from "../../../../integrations/shelfsense";
 
 const ALERT_THRESHOLD_PCT=25;
@@ -44,7 +44,7 @@ export async function GET(req){try{const tenant=await requireTenant(),asOf=new U
 
 export async function POST(req){
  try{
-  const tenant=await requireTenant(),sql=db(),body=await req.json().catch(()=>({})),asOf=body.asOf||new Date().toISOString().slice(0,10),selected=new Set((body.selectedSourceIds||body.selected_source_ids||[]).map(String)),accepted=new Set((body.acceptedSourceIds||body.accepted_source_ids||[]).map(String));
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json().catch(()=>({})),asOf=body.asOf||new Date().toISOString().slice(0,10),selected=new Set((body.selectedSourceIds||body.selected_source_ids||[]).map(String)),accepted=new Set((body.acceptedSourceIds||body.accepted_source_ids||[]).map(String));
   if(selected.size===0)return NextResponse.json({error:'Select at least one ShelfSense price to sync'},{status:400});
   const preview=await buildPreview(tenant.id,asOf);let imported=0,skipped=0,blockedAlerts=0,blockedConversions=0;
   for(const row of preview.rows){
@@ -54,5 +54,5 @@ export async function POST(req){
   }
   await sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='success',last_sync_error=NULL,updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`;
   return NextResponse.json({ok:true,imported,skipped,blockedAlerts,blockedConversions,asOf,summary:{mapped:preview.rows.length,missing:preview.rows.filter(x=>x.status==='missing').length,alerts:preview.rows.filter(x=>x.status==='new'&&x.alert).length,needsYield:preview.rows.filter(x=>x.needsYieldSetup).length}})
- }catch(e){try{const tenant=await requireTenant(),sql=db();await sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='failed',last_sync_error=${String(e.message||e)},updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`}catch{}return NextResponse.json({error:e.message},{status:500})}
+ }catch(e){try{const tenant=await requireRole(['owner','admin','manager']),sql=db();await sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='failed',last_sync_error=${String(e.message||e)},updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`}catch{}return NextResponse.json({error:e.message},{status:500})}
 }
