@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
+import {readJson,text,uuid,list,validationResponse} from "../../lib/validation.mjs";
 
 const clean=v=>String(v||"").trim();
 const norm=v=>clean(v).toLowerCase();
 
 export async function POST(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
-    if(Array.isArray(body.rows)){
+    const body=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
+    if(Array.isArray(body.rows)){list(body.rows,{field:"rows",max:2000});
       const existing=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} ORDER BY name`;
       const byName=new Map(existing.map(i=>[norm(i.name),i])),results=[];
       for(let index=0;index<body.rows.length;index++){
@@ -28,17 +29,17 @@ export async function POST(req){
       }
       return NextResponse.json({created:results.filter(x=>x.status==="created").length,updated:results.filter(x=>x.status==="updated").length,errors:results.filter(x=>x.status==="error").length,results},{status:201});
     }
-    const name=clean(body.name);if(!name)return NextResponse.json({error:"Name is required"},{status:400});
+    const name=text(body.name,{field:"Ingredient name",required:true,max:160});
     const [dupe]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${name}) LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An ingredient with this name already exists"},{status:409});
     const [row]=await sql`INSERT INTO ingredients (tenant_id,name,default_unit,ingredient_type,ingredient_category,notes) VALUES (${tid},${name},${body.default_unit||"g"},${body.ingredient_type||"raw"},${clean(body.ingredient_category)||null},${body.notes||null}) RETURNING *`;
     return NextResponse.json(row,{status:201});
-  }catch(e){return NextResponse.json({error:e.message},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Ingredient request failed"},{status:500});}
 }
 
 export async function PATCH(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
+    const body=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     if(Array.isArray(body.ids)){
       const ids=body.ids.map(String).filter(Boolean);
       if(!ids.length)return NextResponse.json({error:"Select at least one ingredient"},{status:400});
@@ -47,20 +48,19 @@ export async function PATCH(req){
       const rows=await sql`UPDATE ingredients SET ingredient_category=${category},updated_at=NOW() WHERE tenant_id=${tid} AND is_active=TRUE AND id = ANY(${ids}::uuid[]) RETURNING id,name,ingredient_category`;
       return NextResponse.json({ok:true,updatedCount:rows.length,rows});
     }
-    if(!body.id)return NextResponse.json({error:"Ingredient id is required"},{status:400});
-    const name=clean(body.name);if(!name)return NextResponse.json({error:"Name is required"},{status:400});
-    const [dupe]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${name}) AND id<>${body.id} LIMIT 1`;
+    const id=uuid(body.id,{field:"Ingredient id"});const name=text(body.name,{field:"Ingredient name",required:true,max:160});
+    const [dupe]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${name}) AND id<>${id} LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An ingredient with this name already exists"},{status:409});
-    const [row]=await sql`UPDATE ingredients SET name=${name},default_unit=${body.default_unit||"g"},ingredient_type=${body.ingredient_type||"raw"},ingredient_category=${clean(body.ingredient_category)||null},notes=${body.notes||null},updated_at=now() WHERE id=${body.id} AND tenant_id=${tid} AND is_active=true RETURNING *`;
+    const [row]=await sql`UPDATE ingredients SET name=${name},default_unit=${body.default_unit||"g"},ingredient_type=${body.ingredient_type||"raw"},ingredient_category=${clean(body.ingredient_category)||null},notes=${body.notes||null},updated_at=now() WHERE id=${id} AND tenant_id=${tid} AND is_active=true RETURNING *`;
     if(!row)return NextResponse.json({error:"Ingredient not found"},{status:404});
     return NextResponse.json(row);
-  }catch(e){return NextResponse.json({error:e.message},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Ingredient request failed"},{status:500});}
 }
 
 export async function DELETE(req){
   try{
-    const body=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
-    const requested=Array.isArray(body.ids)?body.ids.map(String).filter(Boolean):body.id?[String(body.id)]:[];
+    const body=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
+    const requested=Array.isArray(body.ids)?list(body.ids,{field:"ids",max:1000}).map((x,i)=>uuid(x,{field:"Ingredient id"})):body.id?[uuid(body.id,{field:"Ingredient id"})]:[];
     if(!requested.length&&body.name){
       const [named]=await sql`SELECT id FROM ingredients WHERE tenant_id=${tid} AND lower(name)=lower(${clean(body.name)}) LIMIT 1`;
       if(named)requested.push(String(named.id));
@@ -83,5 +83,5 @@ export async function DELETE(req){
       deleted.push({id:item.id,name:item.name});
     }
     return NextResponse.json({ok:true,deleted,blocked,deletedCount:deleted.length,blockedCount:blocked.length});
-  }catch(e){return NextResponse.json({error:e.message},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Ingredient request failed"},{status:500});}
 }

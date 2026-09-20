@@ -2,6 +2,8 @@ import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { db, getRecipe } from "../../../db";
 import {requireTenant,requireRole} from "../../../tenant";
+import {readJson,uuid,validationResponse} from "../../../lib/validation.mjs";
+import {validateRecipePayload} from "../../../lib/recipe-validation.mjs";
 
 function menuFinancials(b){
   if((b.recipe_type||"menu")!=="menu")return{sellingPrice:null,targetFoodCost:35,deliveryCommissionPct:0,paymentFeePct:0,otherVariablePct:0,deliveryFixedCost:0};
@@ -20,7 +22,7 @@ function menuFinancials(b){
 
 export async function GET(req,{params}){
   try{
-    const {id}=await params,tenant=await requireTenant();
+    const raw=await params,id=uuid(raw.id,{field:"Recipe id"}),tenant=await requireTenant();
     const row=await getRecipe(id,tenant.id);
     if(!row||row.is_active===false)return NextResponse.json({error:"Not found"},{status:404});
     return NextResponse.json(row);
@@ -28,8 +30,8 @@ export async function GET(req,{params}){
 }
 
 export async function DELETE(req,{params}){
-  const {id}=await params,sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;
   try{
+    const raw=await params,id=uuid(raw.id,{field:"Recipe id"}),sql=db(),tenant=await requireRole(["owner","admin","manager"]),tid=tenant.id;
     const [recipe]=await sql`SELECT id,name,recipe_type FROM recipes WHERE id=${id} AND tenant_id=${tid} AND is_active=true`;
     if(!recipe)return NextResponse.json({error:"Item not found"},{status:404});
     if(recipe.recipe_type==="bulk"){
@@ -51,7 +53,7 @@ export async function PUT(req,{params}){
   try{
     const [recipeState]=await sql`SELECT is_active FROM recipes WHERE id=${id} AND tenant_id=${tid}`;
     if(!recipeState||!recipeState.is_active)return NextResponse.json({error:"Item not found"},{status:404});
-    const name=String(b.name||"").trim();if(!name)return NextResponse.json({error:"Name is required"},{status:400});
+    const name=b.name;
     const [dupe]=await sql`SELECT id FROM recipes WHERE tenant_id=${tid} AND lower(name)=lower(${name}) AND id<>${id} LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An item with this name already exists"},{status:409});
     const [current]=await sql`SELECT COALESCE(MAX(version_no),0)::int AS max_version FROM recipe_versions WHERE recipe_id=${id}`;
@@ -80,5 +82,5 @@ export async function PUT(req,{params}){
     queries.push(sql`UPDATE recipes SET name=${name},recipe_type=${b.recipe_type||"menu"},category=${b.category||null},current_version_id=${versionId},updated_at=NOW() WHERE id=${id} AND tenant_id=${tid}`);
     await sql.transaction(queries,{isolationLevel:"Serializable"});
     return NextResponse.json({version:{id:versionId,version_no:nextVersion}});
-  }catch(e){return NextResponse.json({error:"Could not update recipe"},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Could not update recipe"},{status:500});}
 }
