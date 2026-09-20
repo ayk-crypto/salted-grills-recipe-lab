@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {db} from "../../db";
-import {requireTenant} from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 const defaults={
   currency:"PKR",tax_enabled:false,tax_rate:0,prices_include_tax:true,
@@ -30,7 +30,7 @@ export async function GET(){
 }
 export async function POST(req){
   try{
-    const tenant=await requireTenant(),sql=db(),body=normalize(await req.json().catch(()=>({})));
+    const tenant=await requireRole(['owner','admin']),sql=db(),body=normalize(await req.json().catch(()=>({})));
     if(body.tax_rate>100||body.payment_fee_pct>100||body.delivery_commission_pct>100||body.other_variable_pct>100)
       return NextResponse.json({error:"Percentage values cannot exceed 100"},{status:400});
     const [row]=await sql`
