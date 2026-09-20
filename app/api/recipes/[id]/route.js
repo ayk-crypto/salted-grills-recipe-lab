@@ -3,10 +3,20 @@ import { NextResponse } from "next/server";
 import { db, getRecipe } from "../../../db";
 import {requireTenant,requireRole} from "../../../tenant";
 
-function costMeta(b){
-  if((b.recipe_type||"menu")!=="menu") return b.kitchen_notes||null;
-  return JSON.stringify({selling_price:Number(b.selling_price)||0,target_food_cost:Number(b.target_food_cost)||35,delivery_commission_pct:Number(b.delivery_commission_pct)||0,payment_fee_pct:Number(b.payment_fee_pct)||0,other_variable_pct:Number(b.other_variable_pct)||0,delivery_fixed_cost:Number(b.delivery_fixed_cost)||0});
+function menuFinancials(b){
+  if((b.recipe_type||"menu")!=="menu")return{sellingPrice:null,targetFoodCost:35,deliveryCommissionPct:0,paymentFeePct:0,otherVariablePct:0,deliveryFixedCost:0};
+  const bounded=(v,fallback=0)=>{const n=Number(v);return Number.isFinite(n)?Math.max(0,Math.min(100,n)):fallback};
+  const money=(v,fallback=0)=>{const n=Number(v);return Number.isFinite(n)&&n>=0?n:fallback};
+  return{
+    sellingPrice:money(b.selling_price,0),
+    targetFoodCost:bounded(b.target_food_cost,35),
+    deliveryCommissionPct:bounded(b.delivery_commission_pct,0),
+    paymentFeePct:bounded(b.payment_fee_pct,0),
+    otherVariablePct:bounded(b.other_variable_pct,0),
+    deliveryFixedCost:money(b.delivery_fixed_cost,0)
+  };
 }
+
 
 export async function GET(req,{params}){
   try{
@@ -62,7 +72,7 @@ export async function PUT(req,{params}){
     }
 
     const queries=[
-      sql`INSERT INTO recipe_versions (id,recipe_id,version_no,status,yield_quantity,yield_unit,prep_time_minutes,cook_time_minutes,kitchen_notes) VALUES (${versionId},${id},${nextVersion},${b.status||"recorded"},${b.yield_quantity||null},${b.yield_unit||null},null,null,${costMeta(b)})`
+      (()=>{const f=menuFinancials(b);return sql`INSERT INTO recipe_versions (id,recipe_id,version_no,status,yield_quantity,yield_unit,prep_time_minutes,cook_time_minutes,kitchen_notes,selling_price,target_food_cost,delivery_commission_pct,payment_fee_pct,other_variable_pct,delivery_fixed_cost) VALUES (${versionId},${id},${nextVersion},${b.status||"recorded"},${b.yield_quantity||null},${b.yield_unit||null},null,null,${b.recipe_type==="bulk"?(b.kitchen_notes||null):null},${f.sellingPrice},${f.targetFoodCost},${f.deliveryCommissionPct},${f.paymentFeePct},${f.otherVariablePct},${f.deliveryFixedCost})`})()
     ];
     components.forEach((x,n)=>queries.push(sql`INSERT INTO recipe_components (recipe_version_id,sort_order,ingredient_id,bulk_recipe_id,quantity,unit,notes) VALUES (${versionId},${n},${x.kind==="ingredient"?x.id:null},${x.kind==="bulk"?x.id:null},${Number(x.quantity)},${x.unit},${x.notes||null})`));
     queries.push(sql`DELETE FROM recipe_packaging WHERE recipe_id=${id}`);
