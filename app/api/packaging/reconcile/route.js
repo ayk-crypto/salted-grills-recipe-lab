@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {db} from "../../../db";
-import {requireTenant} from "../../../tenant";
+import {requireTenant,requireRole} from "../../../tenant";
 import {fetchShelfSenseCosts,fetchShelfSenseItems,getShelfSenseIntegration} from "../../../integrations/shelfsense";
 
 function metadata(x){return x?.metadata||x?.source_metadata||{}}
@@ -29,7 +29,7 @@ function costing(storageUnit,storageCost,yieldQty){
 }
 export async function POST(req){
  try{
-  const tenant=await requireTenant(),sql=db(),b=await req.json(),ids=Array.isArray(b.external_item_ids)?b.external_item_ids.map(String):[];
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),ids=Array.isArray(b.external_item_ids)?b.external_item_ids.map(String):[];
   const integration=await getShelfSenseIntegration(tenant.id);
   if(!integration)return NextResponse.json({error:"ShelfSense is not connected"},{status:400});
   const remote=await fetchShelfSenseCosts(tenant.id);
