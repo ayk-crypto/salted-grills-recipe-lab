@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "../../../../db";
 import {requireTenant,requireRole} from "../../../../tenant";
 import { fetchShelfSenseCosts, getShelfSenseIntegration } from "../../../../integrations/shelfsense";
+import {errorResponse,requestId,logError} from "../../../../lib/api-errors.mjs";
 
 const ALERT_THRESHOLD_PCT=25;
 function day(v){return v?String(v).slice(0,10):new Date().toISOString().slice(0,10)}
@@ -40,10 +41,10 @@ async function buildPreview(tenantId,asOf){
   return{asOf,workspaceId:remote.workspaceId||integration.external_tenant_id||null,rows};
 }
 
-export async function GET(req){try{const tenant=await requireTenant(),asOf=new URL(req.url).searchParams.get('asOf')||new Date().toISOString().slice(0,10),preview=await buildPreview(tenant.id,asOf);return NextResponse.json({...preview,alertThresholdPct:ALERT_THRESHOLD_PCT,summary:{mapped:preview.rows.length,new:preview.rows.filter(x=>x.status==='new').length,changed:preview.rows.filter(x=>x.changed).length,costChanged:preview.rows.filter(x=>x.costChanged).length,unchanged:preview.rows.filter(x=>x.status==='unchanged').length,missing:preview.rows.filter(x=>x.status==='missing').length,alerts:preview.rows.filter(x=>x.status==='new'&&x.alert).length,conversionWarnings:preview.rows.filter(x=>x.conversionWarning).length,needsYield:preview.rows.filter(x=>x.needsYieldSetup).length}})}catch(e){return NextResponse.json({error:e.message},{status:500})}}
+export async function GET(req){const rid=requestId(req);try{const tenant=await requireTenant(),asOf=new URL(req.url).searchParams.get('asOf')||new Date().toISOString().slice(0,10),preview=await buildPreview(tenant.id,asOf);return NextResponse.json({...preview,alertThresholdPct:ALERT_THRESHOLD_PCT,summary:{mapped:preview.rows.length,new:preview.rows.filter(x=>x.status==='new').length,changed:preview.rows.filter(x=>x.changed).length,costChanged:preview.rows.filter(x=>x.costChanged).length,unchanged:preview.rows.filter(x=>x.status==='unchanged').length,missing:preview.rows.filter(x=>x.status==='missing').length,alerts:preview.rows.filter(x=>x.status==='new'&&x.alert).length,conversionWarnings:preview.rows.filter(x=>x.conversionWarning).length,needsYield:preview.rows.filter(x=>x.needsYieldSetup).length}})}catch(e){return errorResponse(e,NextResponse,{requestId:rid,route:"/api/integrations/shelfsense/sync",action:"preview",fallback:"Could not preview ShelfSense sync"})}}
 
 export async function POST(req){
- try{
+ const rid=requestId(req);try{
   const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json().catch(()=>({})),asOf=body.asOf||new Date().toISOString().slice(0,10),selected=new Set((body.selectedSourceIds||body.selected_source_ids||[]).map(String)),accepted=new Set((body.acceptedSourceIds||body.accepted_source_ids||[]).map(String));
   if(selected.size===0)return NextResponse.json({error:'Select at least one ShelfSense price to sync'},{status:400});
   const preview=await buildPreview(tenant.id,asOf);let imported=0,skipped=0,blockedAlerts=0,blockedConversions=0;
@@ -54,5 +55,5 @@ export async function POST(req){
   }
   await sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='success',last_sync_error=NULL,updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`;
   return NextResponse.json({ok:true,imported,skipped,blockedAlerts,blockedConversions,asOf,summary:{mapped:preview.rows.length,missing:preview.rows.filter(x=>x.status==='missing').length,alerts:preview.rows.filter(x=>x.status==='new'&&x.alert).length,needsYield:preview.rows.filter(x=>x.needsYieldSetup).length}})
- }catch(e){try{const tenant=await requireRole(['owner','admin','manager']),sql=db();await sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='failed',last_sync_error=${String(e.message||e)},updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`}catch{}return NextResponse.json({error:e.message},{status:500})}
+ }catch(e){try{const tenant=await requireRole(['owner','admin','manager']),sql=db();await sql`UPDATE integrations SET last_sync_at=NOW(),last_sync_status='failed',last_sync_error=${String(e.message||e).slice(0,1000)},updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`}catch(logFailure){logError(logFailure,{requestId:rid,route:'/api/integrations/shelfsense/sync',action:'record_failure'})}return errorResponse(e,NextResponse,{requestId:rid,route:'/api/integrations/shelfsense/sync',action:'sync',fallback:'ShelfSense sync failed'})}
 }
