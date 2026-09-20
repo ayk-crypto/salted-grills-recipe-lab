@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {db} from "../../../db";
-import {requireTenant} from "../../../tenant";
+import {requireTenant,requireRole} from "../../../tenant";
 
 export async function GET(){
  try{
@@ -18,7 +18,7 @@ export async function GET(){
 }
 export async function POST(req){
  try{
-  const t=await requireTenant(),sql=db(),b=await req.json(),setId=b.packaging_set_id||null,orderType=['default','dine_in','takeaway','delivery'].includes(b.order_type)?b.order_type:'default';
+  const t=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),setId=b.packaging_set_id||null,orderType=['default','dine_in','takeaway','delivery'].includes(b.order_type)?b.order_type:'default';
   if(b.category_id){
    if(!setId){await sql`DELETE FROM category_packaging_defaults WHERE tenant_id=${t.id} AND category_id=${b.category_id} AND order_type=${orderType}`;return NextResponse.json({ok:true})}
    await sql`INSERT INTO category_packaging_defaults(tenant_id,category_id,packaging_set_id,order_type) VALUES(${t.id},${b.category_id},${setId},${orderType}) ON CONFLICT(tenant_id,category_id,order_type) DO UPDATE SET packaging_set_id=EXCLUDED.packaging_set_id,updated_at=NOW()`;
