@@ -1,3 +1,4 @@
+// Tenant-scoped audit trail.
 function safe(value){
   if(value===undefined)return null;
   try{return JSON.parse(JSON.stringify(value))}catch{return null}
