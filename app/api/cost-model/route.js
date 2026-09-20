@@ -2,6 +2,8 @@ import {NextResponse} from "next/server";
 import {db} from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
 import {readJson,text,nonnegative,percentage,list,validationResponse} from "../../lib/validation.mjs";
+import {recordAudit} from "../../lib/audit.mjs";
+import {requestId} from "../../lib/api-errors.mjs";
 
 const defaults={
   currency:"PKR",tax_enabled:false,tax_rate:0,prices_include_tax:true,
@@ -50,8 +52,9 @@ export async function GET(){
   }catch(e){return NextResponse.json({error:"Could not load cost model"},{status:500})}
 }
 export async function POST(req){
-  try{
+  const rid=requestId(req);try{
     const tenant=await requireRole(["owner","admin"]),sql=db(),body=validateModel(await readJson(req));
+    const [before]=await sql`SELECT * FROM workspace_cost_models WHERE tenant_id=${tenant.id} LIMIT 1`;
     const [row]=await sql`
       INSERT INTO workspace_cost_models
       (tenant_id,currency,tax_enabled,tax_rate,prices_include_tax,payment_fee_pct,delivery_commission_pct,other_variable_pct,packaging_per_order,monthly_overheads,monthly_sales_basis,allocation_method,updated_at)
@@ -63,6 +66,7 @@ export async function POST(req){
         packaging_per_order=EXCLUDED.packaging_per_order,monthly_overheads=EXCLUDED.monthly_overheads,
         monthly_sales_basis=EXCLUDED.monthly_sales_basis,allocation_method='revenue',updated_at=NOW()
       RETURNING *`;
+    await recordAudit(sql,{tenant,action:before?"update":"create",entityType:"cost_model",entityId:tenant.id,entityName:"Workspace Cost Model",before:before?normalizeRead(before):null,after:normalizeRead(row),requestId:rid});
     return NextResponse.json({ok:true,model:normalizeRead(row)});
   }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Could not save cost model"},{status:500})}
 }
