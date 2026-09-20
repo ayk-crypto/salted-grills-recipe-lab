@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 function meta(v){if(!v)return{};if(typeof v==='object')return v;try{return JSON.parse(v)||{}}catch{return{}}}
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:null}
@@ -29,7 +29,7 @@ export async function GET(){
 
 export async function POST(req){
   try{
-    const tenant=await requireTenant(),sql=db(),body=await req.json().catch(()=>({})),action=String(body.action||'');
+    const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json().catch(()=>({})),action=String(body.action||'');
 
     if(action==='create'){
       const ingredients=Array.isArray(body.ingredients)?body.ingredients:[];
