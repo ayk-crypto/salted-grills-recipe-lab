@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 function cleanIds(v){return [...new Set((Array.isArray(v)?v:[]).map(x=>String(x||"").trim()).filter(Boolean))].slice(0,500)}
 function parseMeta(v){try{const x=JSON.parse(v||"{}");return x&&typeof x==="object"?x:{}}catch{return {}}}
@@ -16,7 +16,7 @@ export async function PATCH(req){
     const category=hasCategory?String(body.category||"").trim():null,selling=hasSelling?Number(body.selling_price):null,target=hasTarget?Number(body.target_food_cost):null;
     if(hasSelling&&(!Number.isFinite(selling)||selling<0))return NextResponse.json({error:"Selling price must be zero or greater"},{status:400});
     if(hasTarget&&(!Number.isFinite(target)||target<=0||target>100))return NextResponse.json({error:"Target food cost must be between 0 and 100"},{status:400});
-    const sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    const sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     if(hasCategory&&category){
       const [cat]=await sql`SELECT id FROM categories WHERE tenant_id=${tid} AND lower(name)=lower(${category}) LIMIT 1`;
       if(cat)await sql`UPDATE categories SET is_active=true,updated_at=now() WHERE id=${cat.id} AND tenant_id=${tid}`;
@@ -43,7 +43,7 @@ export async function DELETE(req){
   try{
     const body=await req.json(),ids=cleanIds(body.ids);
     if(!ids.length)return NextResponse.json({error:"Select at least one menu item"},{status:400});
-    const sql=db(),tenant=await requireTenant(),tid=tenant.id,items=[];
+    const sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id,items=[];
     for(const id of ids){
       const [row]=await sql`UPDATE recipes SET is_active=false,updated_at=now() WHERE id=${id} AND tenant_id=${tid} AND recipe_type='menu' AND is_active=true RETURNING id,name`;
       if(row)items.push(row);
