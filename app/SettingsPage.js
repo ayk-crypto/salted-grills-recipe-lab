@@ -20,6 +20,7 @@ export default function SettingsPage(){
  const [form,setForm]=useState({base_url:"https://shelfsense-0qgb.onrender.com",token:""}),[busy,setBusy]=useState(false),[notice,setNotice]=useState("");
  const [model,setModel]=useState(blankModel),[modelBusy,setModelBusy]=useState(false);
  const [reconQ,setReconQ]=useState(""),[reconView,setReconView]=useState("unmapped"),[reconCategory,setReconCategory]=useState("all"),[selected,setSelected]=useState({}),[units,setUnits]=useState({}),[targets,setTargets]=useState({}),[reconBusy,setReconBusy]=useState(false);
+ const [audit,setAudit]=useState([]),[auditLoading,setAuditLoading]=useState(false),[auditError,setAuditError]=useState("");
 
  async function load(){
   setState(s=>({...s,loading:true,error:""}));
@@ -34,6 +35,8 @@ export default function SettingsPage(){
   }catch(e){setState(s=>({...s,loading:false,error:e.message}))}
  }
  useEffect(()=>{load()},[]);
+ async function loadAudit(){setAuditLoading(true);setAuditError("");try{const r=await fetch("/api/audit?limit=100",{cache:"no-store"}),j=await r.json();if(!r.ok)throw new Error(j.error||"Could not load audit history");setAudit(j.events||[])}catch(e){setAuditError(e.message)}finally{setAuditLoading(false)}}
+ useEffect(()=>{if(tab==="audit")loadAudit()},[tab]);
  useEffect(()=>{document.body.classList.toggle("v2-nav-open",navOpen);return()=>document.body.classList.remove("v2-nav-open")},[navOpen]);
 
  async function connect(e){e.preventDefault();setBusy(true);setNotice("");try{const r=await fetch("/api/integrations/shelfsense",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)}),j=await r.json();if(!r.ok)throw new Error(j.error||"Connection failed");setForm(x=>({...x,token:""}));setNotice("ShelfSense connected. "+(j.itemCount||0)+" items available.");await load()}catch(e){setNotice(e.message)}finally{setBusy(false)}}
@@ -59,12 +62,12 @@ export default function SettingsPage(){
   <aside className={"v2-side "+(navOpen?"mobile-open":"")}><div className="brand"><div className="product-mark">PC</div><b className="product-name">PLATECOST</b><span className="product-tagline">RESTAURANT COST CONTROL</span><section className="workspace-switch"><small>WORKSPACE</small><strong>{tenantName}</strong></section></div><nav>{NAV_GROUPS.map(g=><div className="v2-nav-group" data-nav-group={g.label.toLowerCase().replace(/\s+/g,"-")} key={g.label}><div className="v2-nav-group-title">{g.label}</div>{g.items.map(([href,label])=><button key={href} className={href==="/settings"?"active":""} onClick={()=>{setNavOpen(false);router.push(href)}}>{label}</button>)}</div>)}</nav><footer><b>PlateCost</b><span>Restaurant costing</span></footer></aside>
   <div className="v2-work"><main className="v2-main settings-main">
    <div className="v2-head"><div><span>PLATECOST ADMINISTRATION</span><h1>Settings</h1><p>Manage workspace-wide costing rules, users and integrations.</p></div></div>
-   <div className="settings-tabs"><button className={tab==="workspace"?"active":""} onClick={()=>setTab("workspace")}>Workspace</button><button className={tab==="cost"?"active":""} onClick={()=>setTab("cost")}>Cost Model</button><button className={tab==="users"?"active":""} onClick={()=>setTab("users")}>Users</button><button className={tab==="integrations"?"active":""} onClick={()=>setTab("integrations")}>Integrations & APIs</button></div>
+   <div className="settings-tabs"><button className={tab==="workspace"?"active":""} onClick={()=>setTab("workspace")}>Workspace</button><button className={tab==="cost"?"active":""} onClick={()=>setTab("cost")}>Cost Model</button><button className={tab==="users"?"active":""} onClick={()=>setTab("users")}>Users</button><button className={tab==="integrations"?"active":""} onClick={()=>setTab("integrations")}>Integrations & APIs</button><button className={tab==="audit"?"active":""} onClick={()=>setTab("audit")}>Audit Trail</button></div>
    {state.error&&<div className="settings-alert bad">{state.error}</div>}{notice&&<div className="settings-alert">{notice}</div>}
 
    {tab==="workspace"&&<section className="settings-grid">
     <article className="settings-card"><span>WORKSPACE</span><h2>{tenantName}</h2><p>All ingredient, recipe, cost-model and integration data is isolated to this workspace.</p><dl><div><dt>Status</dt><dd>Active</dd></div><div><dt>Workspace ID</dt><dd>{state.tenant?.id||"Loading…"}</dd></div></dl></article>
-    <article className="settings-card"><span>SAAS MODEL</span><h2>Workspace-scoped configuration</h2><p>Each PlateCost customer can maintain their own tax rules, overhead structure, ShelfSense connection and ingredient mappings.</p><div className="settings-note">Authentication and role enforcement remain the next platform layer before public multi-customer onboarding.</div></article>
+    <article className="settings-card"><span>SAAS MODEL</span><h2>Workspace-scoped configuration</h2><p>Each PlateCost customer can maintain their own tax rules, overhead structure, ShelfSense connection and ingredient mappings.</p><div className="settings-note">Authentication, workspace membership, role enforcement and database tenant isolation are enabled for this workspace.</div></article>
    </section>}
 
    {tab==="cost"&&<form className="settings-grid cost-model-grid" onSubmit={saveCostModel}>
@@ -74,7 +77,18 @@ export default function SettingsPage(){
     <article className="settings-card wide cost-save-bar"><div><b>PlateCost keeps recipe cost separate from business overhead.</b><p>Menu profitability will use net selling price − recipe cost − variable selling costs − allocated overhead.</p></div><button className="primary" disabled={modelBusy}>{modelBusy?"Saving…":"Save Cost Model"}</button></article>
    </form>}
 
-   {tab==="users"&&<section className="settings-grid"><article className="settings-card wide"><span>USER MANAGEMENT</span><div className="settings-card-head"><div><h2>Workspace users</h2><p>Manage who can access PlateCost and what they are allowed to change.</p></div><button className="primary" disabled title="Enable authentication first">+ Invite User</button></div><div className="settings-user-row"><div className="settings-avatar">A</div><div><b>Workspace Owner</b><small>Current workspace deployment</small></div><span className="settings-role">Owner</span><span className="settings-status">Active</span></div><div className="settings-note">Real invitations and permission enforcement will be enabled with the authentication/RBAC phase.</div></article></section>}
+   {tab==="users"&&<section className="settings-grid"><article className="settings-card wide"><span>USER MANAGEMENT</span><div className="settings-card-head"><div><h2>Workspace users</h2><p>Manage who can access PlateCost and what they are allowed to change.</p></div><button className="primary" disabled title="Invitation workflow will be added separately">+ Invite User</button></div><div className="settings-user-row"><div className="settings-avatar">A</div><div><b>Workspace Owner</b><small>Current workspace deployment</small></div><span className="settings-role">Owner</span><span className="settings-status">Active</span></div><div className="settings-note">Role enforcement is active. The remaining user-management enhancement is the invitation and membership administration workflow.</div></article></section>}
+
+
+   {tab==="audit"&&<section className="settings-grid">
+    <article className="settings-card wide"><span>AUDIT TRAIL</span><div className="settings-card-head"><div><h2>Workspace activity</h2><p>Recent changes to recipes, prices, packaging, integrations, cost models and costing snapshots.</p></div><button className="ghost" onClick={loadAudit} disabled={auditLoading}>{auditLoading?"Refreshing…":"Refresh"}</button></div>
+     {auditError&&<div className="settings-alert bad">{auditError}</div>}
+     <div className="audit-table"><div className="audit-row head"><span>When</span><span>User</span><span>Action</span><span>Area</span><span>Item</span><span>Request</span></div>
+      {audit.map(x=><div className="audit-row" key={x.id}><span>{new Date(x.created_at).toLocaleString()}</span><span><b>{x.actor_email||"System"}</b><small>{x.actor_role||"—"}</small></span><span><em>{x.action}</em></span><span>{String(x.entity_type||"").replaceAll("_"," ")}</span><span><b>{x.entity_name||x.entity_id||"—"}</b>{(x.before_data||x.after_data)&&<small>{x.before_data&&x.after_data?"Changed":"Recorded"}</small>}</span><span><code>{x.request_id?String(x.request_id).slice(0,8):"—"}</code></span></div>)}
+      {!auditLoading&&!audit.length&&<div className="settings-empty">No audit events recorded yet. New changes will appear here.</div>}
+     </div>
+    </article>
+   </section>}
 
    {tab==="integrations"&&<section className="settings-grid">
     <article className="settings-card wide"><span>INTEGRATIONS & APIS</span><div className="settings-card-head"><div><h2>ShelfSense</h2><p>Inventory purchasing and storage-cost source for PlateCost.</p></div><div className={"connection-pill "+(state.connected?"connected":"")}>{state.loading?"Checking…":state.connected?"Connected":"Not connected"}</div></div>
