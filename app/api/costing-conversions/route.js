@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
+import {readJson,text,uuid,positive,oneOf,validationResponse} from "../../lib/validation.mjs";
 
 function norm(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
 function unitInfo(unit){
@@ -21,24 +22,21 @@ export async function GET(req){
       ?await sql`SELECT * FROM ingredient_costing_conversions WHERE tenant_id=${tenant.id} AND ingredient_id=${ingredientId} ORDER BY purchase_unit`
       :await sql`SELECT * FROM ingredient_costing_conversions WHERE tenant_id=${tenant.id} ORDER BY ingredient_id,purchase_unit`;
     return NextResponse.json({conversions:rows});
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Costing conversion request failed"},{status:500})}
 }
 
 export async function POST(req){
   try{
-    const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json();
-    const ingredientId=String(body.ingredient_id||body.ingredientId||'').trim();
-    const purchaseUnit=norm(body.purchase_unit||body.purchaseUnit);
-    const usableQuantity=Number(body.usable_quantity||body.usableQuantity);
-    if(!ingredientId)return NextResponse.json({error:'Ingredient is required'},{status:400});
-    if(!purchaseUnit)return NextResponse.json({error:'Purchase unit is required'},{status:400});
-    if(!Number.isFinite(usableQuantity)||usableQuantity<=0)return NextResponse.json({error:'Usable quantity must be greater than zero'},{status:400});
+    const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await readJson(req);
+    const ingredientId=uuid(body.ingredient_id||body.ingredientId,{field:"Ingredient id"});
+    const purchaseUnit=text(body.purchase_unit||body.purchaseUnit,{field:"Purchase unit",required:true,max:40}).toLowerCase();
+    const usableQuantity=positive(body.usable_quantity||body.usableQuantity,{field:"Usable quantity"});
     const [ingredient]=await sql`SELECT id,name,default_unit FROM ingredients WHERE id=${ingredientId} AND tenant_id=${tenant.id} AND is_active=TRUE`;
     if(!ingredient)return NextResponse.json({error:'Ingredient not found'},{status:404});
     const costingUnit=norm(body.costing_unit||body.costingUnit||ingredient.default_unit);
     const info=unitInfo(costingUnit);
     if(!['weight','volume','count'].includes(info[0]))return NextResponse.json({error:'Costing unit must be g/kg, ml/L, or pc'},{status:400});
-    const source=body.source==='shelfsense'?'shelfsense':'manual';
+    const source=oneOf(body.source||"manual",["manual","shelfsense"],{field:"Source"});
     const [saved]=await sql`
       INSERT INTO ingredient_costing_conversions
         (tenant_id,ingredient_id,purchase_unit,usable_quantity,costing_unit,source,notes,updated_at)
@@ -50,7 +48,7 @@ export async function POST(req){
       RETURNING *
     `;
     return NextResponse.json({ok:true,conversion:saved});
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Costing conversion request failed"},{status:500})}
 }
 
 export async function DELETE(req){
@@ -61,5 +59,5 @@ export async function DELETE(req){
     if(!ingredientId||!purchaseUnit)return NextResponse.json({error:'Ingredient and purchase unit are required'},{status:400});
     await sql`DELETE FROM ingredient_costing_conversions WHERE tenant_id=${tenant.id} AND ingredient_id=${ingredientId} AND purchase_unit=${purchaseUnit}`;
     return NextResponse.json({ok:true});
-  }catch(e){return NextResponse.json({error:e.message},{status:500})}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Costing conversion request failed"},{status:500})}
 }
