@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 import { requireTenant } from "../../tenant";
+import {errorResponse,requestId,okJson} from "../../lib/api-errors.mjs";
 
 function norm(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
 function unitInfo(unit){
@@ -83,8 +84,8 @@ function priceDerived(p,ingredient,conversionMap){
   return{costing_status:d.costing_status,normalized_cost:base>0?Number(d.purchase_price)/base:null,normalized_unit:info[2],source_purchase_unit:d.source_purchase_unit||d.display_purchase_unit,storage_unit:d.storage_unit||null,storage_unit_cost:d.storage_unit_cost??null,usable_quantity:d.usable_quantity||null,usable_costing_unit:d.usable_costing_unit||null};
 }
 
-export async function GET() {
-  try {
+export async function GET(req) {
+  const rid=requestId(req);try {
     const sql = db();
     const tenant = await requireTenant();
     const tid = tenant.id;
@@ -183,8 +184,8 @@ export async function GET() {
     `;
     const ingredientMap=new Map(ingredientRows.map(i=>[String(i.id),i]));
     const prices=rawPrices.map(p=>({...p,...priceDerived(p,ingredientMap.get(String(p.ingredient_id))||{id:p.ingredient_id,default_unit:p.purchase_unit},conversionMap)}));
-    return NextResponse.json({tenant:{id:tenant.id,name:tenant.name,slug:tenant.slug},ingredients, packaging, packaging_sets:packagingSets, category_packaging_defaults:categoryPackaging, recipe_packaging_defaults:recipePackaging, units, categories, recipes:recipesWithPackaging, prices, costing_conversions:costingConversions});
+    return okJson(NextResponse,{tenant:{id:tenant.id,name:tenant.name,slug:tenant.slug},ingredients,packaging,packaging_sets:packagingSets,category_packaging_defaults:categoryPackaging,recipe_packaging_defaults:recipePackaging,units,categories,recipes:recipesWithPackaging,prices,costing_conversions:costingConversions},{requestId:rid});
   } catch (e) {
-    return NextResponse.json({error: e.message}, {status: 500});
+    return errorResponse(e,NextResponse,{requestId:rid,route:"/api/bootstrap",action:"load",fallback:"Could not load workspace data"});
   }
 }
