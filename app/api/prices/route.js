@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 function normalizeName(v){return String(v||"").trim().toLowerCase()}
 function validNumber(v){return Number.isFinite(Number(v))&&Number(v)>0}
@@ -20,7 +20,7 @@ export async function GET(req){
 
 export async function POST(req){
   try{
-    const b=await req.json(),sql=db(),tenant=await requireTenant(),tid=tenant.id;
+    const b=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
     if(Array.isArray(b.rows)){
       const ingredients=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} AND is_active=true ORDER BY name`;
       const byName=new Map(ingredients.map(i=>[normalizeName(i.name),i])),results=[];

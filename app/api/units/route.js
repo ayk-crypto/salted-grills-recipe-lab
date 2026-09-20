@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
+import {requireTenant,requireRole} from "../../tenant";
 
 export async function GET() {
   try {
+    await requireTenant();
     const sql = db();
     const rows = await sql`SELECT * FROM measurement_units WHERE is_active=true ORDER BY unit_group NULLS LAST, name`;
     return NextResponse.json(rows);
@@ -13,6 +15,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
+    await requireRole(["owner","admin"]);
     const b=await req.json();
     const name=String(b.name||'').trim();
     const symbol=String(b.symbol||'').trim();
@@ -31,6 +34,7 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
+    await requireRole(["owner","admin"]);
     const {id}=await req.json();
     const sql=db();
     const [row]=await sql`UPDATE measurement_units SET is_active=false,updated_at=now() WHERE id=${id} RETURNING id`;

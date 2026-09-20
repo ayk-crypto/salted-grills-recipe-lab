@@ -1,18 +1,11 @@
 import {NextResponse} from "next/server";
 import {db} from "../../db";
-import {requireTenant} from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
+import {packagingEachCost} from "../../lib/costing.mjs";
 
 const num=v=>{const n=Number(v);return Number.isFinite(n)&&n>=0?n:null};
 const unitCost=(qty,price)=>{const q=num(qty),p=num(price);return q&&q>0&&p!==null?p/q:null};
-const norm=v=>String(v||"").trim().toLowerCase();
-const isEachUnit=v=>['pc','pcs','piece','pieces','each'].includes(norm(v));
-const derivedCost=(storageUnit,storageCost,yieldQty)=>{
- const c=num(storageCost),y=num(yieldQty);
- if(c===null)return{unitCost:null,status:'missing_cost'};
- if(isEachUnit(storageUnit))return{unitCost:c,status:'ready'};
- if(y&&y>0)return{unitCost:c/y,status:'ready'};
- return{unitCost:null,status:'needs_yield'};
-};
+const derivedCost=(storageUnit,storageCost,yieldQty)=>packagingEachCost(storageCost,storageUnit,yieldQty);
 
 export async function GET(){
  try{
@@ -31,7 +24,7 @@ export async function GET(){
 
 export async function POST(req){
  try{
-  const tenant=await requireTenant(),sql=db(),b=await req.json(),name=String(b.name||"").trim();
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),name=String(b.name||"").trim();
   if(!name)return NextResponse.json({error:"Packaging name is required"},{status:400});
   const [dupe]=await sql`SELECT id FROM packaging_items WHERE tenant_id=${tenant.id} AND is_active=TRUE AND lower(name)=lower(${name}) LIMIT 1`;
   if(dupe)return NextResponse.json({error:"Packaging item already exists"},{status:409});
@@ -47,7 +40,7 @@ export async function POST(req){
 
 export async function PUT(req){
  try{
-  const tenant=await requireTenant(),sql=db(),b=await req.json();
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json();
   if(!b.id)return NextResponse.json({error:"Packaging id is required"},{status:400});
   const name=String(b.name||"").trim();if(!name)return NextResponse.json({error:"Packaging name is required"},{status:400});
   const [existing]=await sql`SELECT source_type,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost FROM packaging_items WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE LIMIT 1`;
@@ -78,7 +71,7 @@ export async function PUT(req){
 
 export async function DELETE(req){
  try{
-  const tenant=await requireTenant(),sql=db(),{id}=await req.json();
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),{id}=await req.json();
   if(!id)return NextResponse.json({error:"Packaging id is required"},{status:400});
   const [usage]=await sql`
     SELECT (

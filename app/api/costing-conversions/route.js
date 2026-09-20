@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 function norm(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
 function unitInfo(unit){
@@ -26,7 +26,7 @@ export async function GET(req){
 
 export async function POST(req){
   try{
-    const tenant=await requireTenant(),sql=db(),body=await req.json();
+    const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json();
     const ingredientId=String(body.ingredient_id||body.ingredientId||'').trim();
     const purchaseUnit=norm(body.purchase_unit||body.purchaseUnit);
     const usableQuantity=Number(body.usable_quantity||body.usableQuantity);
@@ -55,7 +55,7 @@ export async function POST(req){
 
 export async function DELETE(req){
   try{
-    const tenant=await requireTenant(),sql=db(),body=await req.json();
+    const tenant=await requireRole(['owner','admin','manager']),sql=db(),body=await req.json();
     const ingredientId=String(body.ingredient_id||body.ingredientId||'').trim();
     const purchaseUnit=norm(body.purchase_unit||body.purchaseUnit);
     if(!ingredientId||!purchaseUnit)return NextResponse.json({error:'Ingredient and purchase unit are required'},{status:400});

@@ -1,13 +1,13 @@
 import {NextResponse} from "next/server";
 import {db} from "../../../db";
-import {requireTenant} from "../../../tenant";
+import {requireTenant,requireRole} from "../../../tenant";
 import {fetchShelfSenseCosts,fetchShelfSenseItems,getShelfSenseIntegration} from "../../../integrations/shelfsense";
+import {packagingEachCost} from "../../../lib/costing.mjs";
 
 function metadata(x){return x?.metadata||x?.source_metadata||{}}
 function norm(v){return String(v||"").trim().toLowerCase().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim()}
 function externalId(x){return String(x?.shelfSenseItemId||x?.itemId||x?.id||x?.externalItemId||"")}
 function itemName(x){return String(x?.itemName||x?.name||"").trim()}
-function isEachUnit(v){return['pc','pcs','piece','pieces','each'].includes(norm(v))}
 function costFields(x){
  const m=metadata(x);
  const qty=Number(x.enteredQuantity??x.receivedQuantity??x.purchaseQuantity??m.sourceEnteredQty??1);
@@ -20,16 +20,10 @@ function costFields(x){
  const storageCost=Number.isFinite(rawStorageCost)&&rawStorageCost>=0?rawStorageCost:(effectiveQty>0?effectivePrice/effectiveQty:null);
  return{effectiveQty,purchaseUnit,effectivePrice,storageUnit,storageCost};
 }
-function costing(storageUnit,storageCost,yieldQty){
- const y=Number(yieldQty);
- if(storageCost===null||!Number.isFinite(Number(storageCost)))return{unitCost:null,status:'missing_cost'};
- if(isEachUnit(storageUnit))return{unitCost:Number(storageCost),status:'ready'};
- if(Number.isFinite(y)&&y>0)return{unitCost:Number(storageCost)/y,status:'ready'};
- return{unitCost:null,status:'needs_yield'};
-}
+function costing(storageUnit,storageCost,yieldQty){return packagingEachCost(storageCost,storageUnit,yieldQty)}
 export async function POST(req){
  try{
-  const tenant=await requireTenant(),sql=db(),b=await req.json(),ids=Array.isArray(b.external_item_ids)?b.external_item_ids.map(String):[];
+  const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json(),ids=Array.isArray(b.external_item_ids)?b.external_item_ids.map(String):[];
   const integration=await getShelfSenseIntegration(tenant.id);
   if(!integration)return NextResponse.json({error:"ShelfSense is not connected"},{status:400});
   const remote=await fetchShelfSenseCosts(tenant.id);

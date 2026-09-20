@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "../../../../db";
-import { requireTenant } from "../../../../tenant";
+import {requireTenant,requireRole} from "../../../../tenant";
 import { fetchShelfSenseItems, getShelfSenseIntegration } from "../../../../integrations/shelfsense";
 
 function norm(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
 
 export async function POST(req){
   try{
-    const tenant=await requireTenant(),sql=db();
+    const tenant=await requireRole(['owner','admin','manager']),sql=db();
     const body=await req.json();
     const integration=await getShelfSenseIntegration(tenant.id);
     if(!integration)return NextResponse.json({error:'ShelfSense is not connected'},{status:400});

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "../../../db";
-import { requireTenant } from "../../../tenant";
+import {requireTenant,requireRole} from "../../../tenant";
 import { encryptCredential } from "../../../integrations/crypto";
-import { fetchShelfSenseItems, getShelfSenseIntegration } from "../../../integrations/shelfsense";
+import { fetchShelfSenseItems, getShelfSenseIntegration, validateShelfSenseBaseUrl } from "../../../integrations/shelfsense";
 
 export async function GET(){
   try{
@@ -34,10 +34,10 @@ export async function GET(){
 
 export async function POST(req){
   try{
-    const tenant=await requireTenant();
+    const tenant=await requireRole(['owner','admin']);
     const body=await req.json();
     const token=String(body.token||'').trim();
-    const baseUrl=String(body.base_url||body.baseUrl||'https://shelfsense-0qgb.onrender.com').trim().replace(/\/$/,'');
+    const baseUrl=validateShelfSenseBaseUrl(body.base_url||body.baseUrl||'https://shelfsense-0qgb.onrender.com');
     if(!token)return NextResponse.json({error:'ShelfSense connection token is required'},{status:400});
 
     const probe=await fetch(`${baseUrl}/integrations/cost-control/items`,{
@@ -64,7 +64,7 @@ export async function POST(req){
 
 export async function DELETE(){
   try{
-    const tenant=await requireTenant(),sql=db();
+    const tenant=await requireRole(['owner','admin']),sql=db();
     await sql`UPDATE integrations SET status='disabled',updated_at=NOW() WHERE tenant_id=${tenant.id} AND provider='shelfsense'`;
     await sql`UPDATE ingredient_source_mappings SET source_type='manual',integration_id=NULL,external_item_id=NULL,external_item_name=NULL,updated_at=NOW() WHERE tenant_id=${tenant.id} AND source_type='shelfsense'`;
     return NextResponse.json({ok:true});

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "../../db";
-import { requireTenant } from "../../tenant";
+import {requireTenant,requireRole} from "../../tenant";
 
 const ALLOWED = new Set(["ingredient", "recipe", "category", "price"]);
 
@@ -20,7 +20,7 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
-    const tenant = await requireTenant();
+    const tenant = await requireRole(['owner','admin','manager']);
     const sql = db();
     const body = await req.json();
     const entityType = String(body.entity_type || body.entityType || "").trim();
@@ -35,7 +35,7 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
-    const tenant = await requireTenant();
+    const tenant = await requireRole(['owner','admin','manager']);
     const sql = db();
     const body = await req.json();
     const entityType = String(body.entity_type || body.entityType || "").trim();
