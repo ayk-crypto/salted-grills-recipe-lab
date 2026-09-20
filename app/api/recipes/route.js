@@ -2,6 +2,8 @@ import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "../../db";
 import {requireTenant,requireRole} from "../../tenant";
+import {readJson,list,validationResponse} from "../../lib/validation.mjs";
+import {validateRecipePayload} from "../../lib/recipe-validation.mjs";
 
 function menuFinancials(b){
   if((b.recipe_type||"menu")!=="menu")return{sellingPrice:null,targetFoodCost:35,deliveryCommissionPct:0,paymentFeePct:0,otherVariablePct:0,deliveryFixedCost:0};
@@ -49,10 +51,10 @@ async function importMenuRows(sql,rows,tid){
 }
 
 export async function POST(req){
-  const b=await req.json(),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
   try{
-    if(Array.isArray(b.rows)&&(b.import_type==="menu"||b.type==="menu"))return NextResponse.json(await importMenuRows(sql,b.rows,tid),{status:201});
-    const name=String(b.name||"").trim();if(!name)return NextResponse.json({error:"Name is required"},{status:400});
+    const raw=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
+    if(Array.isArray(raw.rows)&&(raw.import_type==="menu"||raw.type==="menu")){list(raw.rows,{field:"rows",max:2000});return NextResponse.json(await importMenuRows(sql,raw.rows,tid),{status:201});}
+    const b=validateRecipePayload(raw),name=b.name;
     const [dupe]=await sql`SELECT id FROM recipes WHERE tenant_id=${tid} AND lower(name)=lower(${name}) LIMIT 1`;
     if(dupe)return NextResponse.json({error:"An item with this name already exists"},{status:409});
 
@@ -80,5 +82,5 @@ export async function POST(req){
     queries.push(sql`UPDATE recipes SET current_version_id=${versionId},updated_at=NOW() WHERE id=${recipeId} AND tenant_id=${tid}`);
     await sql.transaction(queries,{isolationLevel:"Serializable"});
     return NextResponse.json({recipe:{id:recipeId,name,recipe_type:b.recipe_type||"menu",category:b.category||null},version:{id:versionId,version_no:1}},{status:201});
-  }catch(e){return NextResponse.json({error:"Could not save recipe"},{status:500});}
+  }catch(e){const v=validationResponse(e,NextResponse);if(v)return v;return NextResponse.json({error:"Could not save recipe"},{status:500});}
 }
