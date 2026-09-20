@@ -13,7 +13,8 @@ export async function GET(){
   const rows=await sql`
     SELECT id,name,purchase_quantity,purchase_unit,purchase_price,unit_cost,notes,is_active,
            source_type,external_item_id,source_metadata,last_source_sync_at,
-           storage_unit,storage_unit_cost,units_per_storage_unit,costing_unit,costing_status
+           storage_unit,storage_unit_cost,purchase_to_storage_factor,storage_to_costing_factor,
+           COALESCE(storage_to_costing_factor,units_per_storage_unit) AS units_per_storage_unit,costing_unit,costing_status
     FROM packaging_items
     WHERE tenant_id=${tenant.id} AND is_active=TRUE
     ORDER BY name
@@ -29,10 +30,11 @@ export async function POST(req){
   const [dupe]=await sql`SELECT id FROM packaging_items WHERE tenant_id=${tenant.id} AND is_active=TRUE AND lower(name)=lower(${name}) LIMIT 1`;
   if(dupe)return NextResponse.json({error:"Packaging item already exists"},{status:409});
   const storageCost=unitCost(b.purchase_quantity,b.purchase_price),storageUnit=b.purchase_unit||null;
-  const d=derivedCost(storageUnit,storageCost,b.units_per_storage_unit);
+  const storageToCosting=num(b.storage_to_costing_factor??b.units_per_storage_unit);
+  const d=derivedCost(storageUnit,storageCost,storageToCosting);
   const [row]=await sql`
-    INSERT INTO packaging_items(tenant_id,name,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost,units_per_storage_unit,costing_unit,costing_status,unit_cost,notes,source_type)
-    VALUES(${tenant.id},${name},${b.purchase_quantity||null},${b.purchase_unit||null},${b.purchase_price||null},${storageUnit},${storageCost},${b.units_per_storage_unit||null},'each',${d.status},${d.unitCost},${b.notes||null},'manual')
+    INSERT INTO packaging_items(tenant_id,name,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost,purchase_to_storage_factor,storage_to_costing_factor,units_per_storage_unit,costing_unit,costing_status,unit_cost,notes,source_type)
+    VALUES(${tenant.id},${name},${b.purchase_quantity||null},${b.purchase_unit||null},${b.purchase_price||null},${storageUnit},${storageCost},1,${storageToCosting},${storageToCosting},'each',${d.status},${d.unitCost},${b.notes||null},'manual')
     RETURNING *`;
   return NextResponse.json(row,{status:201});
  }catch(e){return NextResponse.json({error:e.message},{status:500})}
@@ -43,13 +45,13 @@ export async function PUT(req){
   const tenant=await requireRole(['owner','admin','manager']),sql=db(),b=await req.json();
   if(!b.id)return NextResponse.json({error:"Packaging id is required"},{status:400});
   const name=String(b.name||"").trim();if(!name)return NextResponse.json({error:"Packaging name is required"},{status:400});
-  const [existing]=await sql`SELECT source_type,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost FROM packaging_items WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE LIMIT 1`;
+  const [existing]=await sql`SELECT source_type,purchase_quantity,purchase_unit,purchase_price,storage_unit,storage_unit_cost,purchase_to_storage_factor,COALESCE(storage_to_costing_factor,units_per_storage_unit) AS storage_to_costing_factor FROM packaging_items WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE LIMIT 1`;
   if(!existing)return NextResponse.json({error:"Packaging item not found"},{status:404});
-  const yieldQty=num(b.units_per_storage_unit);
+  const yieldQty=num(b.storage_to_costing_factor??b.units_per_storage_unit);
   if(existing.source_type==='shelfsense'){
     const d=derivedCost(existing.storage_unit,existing.storage_unit_cost,yieldQty);
     const [row]=await sql`
-      UPDATE packaging_items SET name=${name},units_per_storage_unit=${yieldQty},costing_unit='each',costing_status=${d.status},unit_cost=${d.unitCost},
+      UPDATE packaging_items SET name=${name},storage_to_costing_factor=${yieldQty},units_per_storage_unit=${yieldQty},costing_unit='each',costing_status=${d.status},unit_cost=${d.unitCost},
         notes=${b.notes||null},updated_at=NOW()
       WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE
       RETURNING *`;
@@ -60,7 +62,7 @@ export async function PUT(req){
   const [row]=await sql`
     UPDATE packaging_items SET name=${name},purchase_quantity=${purchaseQty},
       purchase_unit=${purchaseUnit},purchase_price=${purchasePrice},storage_unit=${purchaseUnit},storage_unit_cost=${storageCost},
-      units_per_storage_unit=${yieldQty},costing_unit='each',costing_status=${d.status},unit_cost=${d.unitCost},
+      purchase_to_storage_factor=1,storage_to_costing_factor=${yieldQty},units_per_storage_unit=${yieldQty},costing_unit='each',costing_status=${d.status},unit_cost=${d.unitCost},
       notes=${b.notes||null},updated_at=NOW()
     WHERE id=${b.id} AND tenant_id=${tenant.id} AND is_active=TRUE
     RETURNING *`;
