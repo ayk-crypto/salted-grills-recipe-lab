@@ -8,7 +8,7 @@ const money=n=>Number.isFinite(Number(n))?`Rs ${Number(n).toLocaleString(undefin
 const pct=n=>Number.isFinite(Number(n))?`${Number(n).toFixed(1)}%`:'—';
 function unitInfo(unit){const u=String(unit||'').trim().toLowerCase();if(u==='kg')return['weight',1000];if(['g','gm','gram','grams'].includes(u))return['weight',1];if(['l','ltr','liter','litre'].includes(u))return['volume',1000];if(u==='ml')return['volume',1];if(['pc','pcs','piece','pieces','portion','portions','each'].includes(u))return['count',1];return[u||'other',1]}
 function baseQty(q,u){return Number(q||0)*unitInfo(u)[1]}
-function parseMeta(v){try{const x=JSON.parse(v||'{}');return typeof x==='object'&&x?x:{}}catch{return {}}}
+function parseMeta(v){if(!v)return{};if(typeof v==='object')return v;try{const x=JSON.parse(v||'{}');return typeof x==='object'&&x?x:{}}catch{return {}}}
 function cx(...a){return a.filter(Boolean).join(' ')}
 
 export default function CostControlApp(){
@@ -93,7 +93,49 @@ export default function CostControlApp(){
 
  function IngredientPage(){const list=ingredients.filter(i=>i.name.toLowerCase().includes(q.toLowerCase()));return <><Header title="Ingredients" sub="Maintain the ingredient master. Prices are managed separately." actions={<><button className="ghost" onClick={downloadIngredientTemplate}>Download Template</button><label className="ghost file">Import Ingredients<input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files[0]&&readExcel(e.target.files[0],'ingredients')}/></label><button className="primary" onClick={()=>setModal({type:'ingredient'})}>+ Add Ingredient</button></>}/><div className="v2-toolbar"><input placeholder="Search ingredients..." value={q} onChange={e=>setQ(e.target.value)}/><b>{ingredients.length} ingredients</b></div><div className="v2-table"><div className="thead"><span>Ingredient</span><span>Default Unit</span><span>Latest Price</span><span>Unit Cost</span><span>Used In</span><span>Actions</span></div>{list.map(i=>{const used=(data.recipes||[]).filter(r=>(r.components_summary||[]).some(c=>c.ingredient_id===i.id)).length;return <div className="trow" key={i.id}><span><b>{i.name}</b><small>{i.ingredient_type||'raw'}</small></span><span>{i.default_unit}</span><span>{i.latest_price?`${money(i.latest_price.purchase_price)} / ${i.latest_price.purchase_quantity} ${i.latest_price.purchase_unit}`:<em className="bad">Missing</em>}</span><span>{Number.isFinite(unitRate(i))?`${money(unitRate(i))}/${unitInfo(i.latest_price.purchase_unit)[0]==='weight'?'g':unitInfo(i.latest_price.purchase_unit)[0]==='volume'?'ml':'pc'}`:'—'}</span><span>{used}</span><span className="row-actions"><button onClick={()=>setModal({type:'ingredient',item:i})}>Edit</button><button onClick={()=>setModal({type:'price',item:i})}>Price</button><button className="danger" onClick={()=>remove('ingredient',i)}>Delete</button></span></div>})}</div></>}
 
- function PricesPage(){const rows=(data.prices||[]).filter(p=>p.ingredient_name.toLowerCase().includes(q.toLowerCase()));return <><Header title="Purchase Prices" sub="ShelfSense prices are reviewed first. Publishing a reviewed snapshot makes the approved costs active everywhere in PlateCost." actions={<><button className="ghost sync-shelfsense-btn" onClick={()=>window.dispatchEvent(new Event('platecost:open-shelfsense'))}>Sync ShelfSense</button><button className="ghost" onClick={downloadPriceTemplate}>Download Price Template</button><label className="primary file">Import Prices<input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files[0]&&readExcel(e.target.files[0],'prices')}/></label></>}/><div className="v2-toolbar"><input placeholder="Search price history..." value={q} onChange={e=>setQ(e.target.value)}/><b>{rows.length} records</b></div><div className="v2-table prices"><div className="thead"><span>Date</span><span>Ingredient</span><span>Purchase</span><span>Price</span><span>Normalized</span><span>Supplier</span></div>{rows.map(p=><div className="trow" key={p.id}><span>{String(p.price_date).slice(0,10)}</span><span><b>{p.ingredient_name}</b></span><span>{p.purchase_quantity} {p.purchase_unit}</span><span>{money(p.purchase_price)}</span><span>{money(Number(p.purchase_price)/baseQty(p.purchase_quantity,p.purchase_unit))}/{unitInfo(p.purchase_unit)[0]==='weight'?'g':unitInfo(p.purchase_unit)[0]==='volume'?'ml':'pc'}</span><span>{p.supplier||'—'}</span></div>)}</div></>}
+ function PricesPage(){
+  const ingredientRows=(data.prices||[]).map(p=>({
+    ...p,
+    row_type:'ingredient',
+    row_key:`ingredient-${p.id}`,
+    item_name:p.ingredient_name,
+    item_type:'Ingredient',
+    source_date:p.price_date,
+    purchase_label:`${p.purchase_quantity} ${p.purchase_unit}`,
+    source_cost_label:money(p.purchase_price),
+    normalized_label:p.costing_status==='needs_yield'
+      ?'Needs yield'
+      :(Number.isFinite(Number(p.normalized_cost))
+        ?`${money(Number(p.normalized_cost))}/${p.normalized_unit||'unit'}`
+        :`${money(Number(p.purchase_price)/baseQty(p.purchase_quantity,p.purchase_unit))}/${unitInfo(p.purchase_unit)[0]==='weight'?'g':unitInfo(p.purchase_unit)[0]==='volume'?'ml':'pc'}`),
+    supplier_label:p.supplier||'—'
+  }));
+  const packagingRows=(data.packaging||[]).filter(p=>p.source_type==='shelfsense').map(p=>{
+    const m=parseMeta(p.source_metadata),factor=Number(p.purchase_to_storage_factor||m.purchaseConversionFactor||1);
+    const purchaseUnit=p.purchase_unit||m.purchaseUnit||m.enteredUnit||'purchase unit';
+    const storageUnit=p.storage_unit||m.baseUnit||'storage unit';
+    const same=String(purchaseUnit).toLowerCase()===String(storageUnit).toLowerCase();
+    const supplier=typeof m.supplier==='object'?m.supplier?.name:m.supplier;
+    const cost=Number(p.storage_unit_cost);
+    const each=Number(p.unit_cost);
+    return {
+      ...p,
+      row_type:'packaging',
+      row_key:`packaging-${p.id}`,
+      item_name:p.name,
+      item_type:'Packaging',
+      source_date:m.effectiveDate||p.last_source_sync_at,
+      purchase_label:same?`1 ${purchaseUnit}`:`1 ${purchaseUnit} = ${Number.isFinite(factor)?factor:1} ${storageUnit}`,
+      source_cost_label:Number.isFinite(cost)?`${money(cost)} / ${storageUnit}`:'—',
+      normalized_label:p.costing_status==='ready'&&Number.isFinite(each)?`${money(each)} / ${p.costing_unit||'each'}`:'Needs yield',
+      supplier_label:supplier||'—'
+    };
+  });
+  const rows=[...ingredientRows,...packagingRows]
+    .filter(p=>(p.item_name+' '+p.item_type+' '+p.supplier_label).toLowerCase().includes(q.toLowerCase()))
+    .sort((a,b)=>new Date(b.source_date||0)-new Date(a.source_date||0)||a.item_name.localeCompare(b.item_name));
+  return <><Header title="Purchase Prices" sub="ShelfSense source costs for both ingredients and packaging. PlateCost applies yield/conversion and shows the costing rate used by recipes and packaging sets." actions={<><button className="ghost sync-shelfsense-btn" onClick={()=>window.dispatchEvent(new Event('platecost:open-shelfsense'))}>Sync ShelfSense</button><button className="ghost" onClick={downloadPriceTemplate}>Download Price Template</button><label className="primary file">Import Prices<input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files[0]&&readExcel(e.target.files[0],'prices')}/></label></>}/><div className="v2-toolbar"><input placeholder="Search ingredient or packaging prices..." value={q} onChange={e=>setQ(e.target.value)}/><b>{rows.length} records</b></div><div className="v2-table prices"><div className="thead"><span>Date</span><span>Item</span><span>Type</span><span>Purchase / Conversion</span><span>Source Cost</span><span>PlateCost Cost</span><span>Supplier</span></div>{rows.map(p=><div className="trow" key={p.row_key}><span>{p.source_date?String(p.source_date).slice(0,10):'—'}</span><span><b>{p.item_name}</b></span><span><small className={p.row_type==='packaging'?'source-pill shelf':'source-pill'}>{p.item_type}</small></span><span>{p.purchase_label}</span><span>{p.source_cost_label}</span><span>{p.normalized_label==='Needs yield'?<><b className="warn">Needs yield</b><small>{p.row_type==='packaging'?'Set packaging yield':'Set usable quantity first'}</small></>:<b>{p.normalized_label}</b>}</span><span>{p.supplier_label}</span></div>)}</div></>
+ }
 
  function PreparedPage(){const list=prepared.filter(r=>r.name.toLowerCase().includes(q.toLowerCase()));return <><Header title="Prepared Components" sub="Batch-cost sauces, rice, marinades and other reusable kitchen components." actions={<button className="primary" onClick={()=>startEditor('bulk')}>+ Add Component</button>}/><div className="v2-toolbar"><input placeholder="Search prepared components..." value={q} onChange={e=>setQ(e.target.value)}/><b>{prepared.length} components</b></div><div className="v2-table prepared"><div className="thead"><span>Prepared Component</span><span>Batch Yield</span><span>Batch Cost</span><span>Cost / Unit</span><span>Used In</span><span>Actions</span></div>{list.map(r=>{const cost=recipeCost(r),used=menus.filter(m=>(m.components_summary||[]).some(c=>c.bulk_recipe_id===r.id)).length;return <div className="trow" key={r.id}><span><b>{r.name}</b><small>{r.component_count||0} ingredients</small></span><span>{r.yield_quantity||'—'} {r.yield_unit||''}</span><span>{Number.isFinite(cost)?money(cost):<em className="bad">Incomplete</em>}</span><span>{Number.isFinite(cost)&&Number(r.yield_quantity)>0?`${money(cost/baseQty(r.yield_quantity,r.yield_unit))}/${unitInfo(r.yield_unit)[0]==='weight'?'g':unitInfo(r.yield_unit)[0]==='volume'?'ml':'pc'}`:'—'}</span><span>{used}</span><span className="row-actions"><button onClick={()=>startEditor('bulk',r)}>Edit Cost</button><button className="danger" onClick={()=>remove('prepared',r)}>Delete</button></span></div>})}</div>{!list.length&&<Empty>No prepared components yet.</Empty>}</>}
 
