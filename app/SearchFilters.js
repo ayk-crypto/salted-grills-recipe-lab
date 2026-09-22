@@ -14,7 +14,7 @@ function configFor(path){
   return null;
 }
 function rowMetric(path,row,sort){
-  if(path.startsWith('/purchase-prices')){if(sort.startsWith('date_'))return Date.parse(text(row,0))||0;if(sort.startsWith('name_'))return text(row,1).toLowerCase();if(sort.startsWith('total_'))return n(text(row,3));if(sort.startsWith('unit_'))return n(text(row,4))}
+  if(path.startsWith('/purchase-prices')){if(sort.startsWith('date_'))return Date.parse(text(row,0))||0;if(sort.startsWith('name_'))return text(row,1).toLowerCase();if(sort.startsWith('total_'))return n(text(row,4));if(sort.startsWith('unit_'))return n(text(row,5))}
   if(path.startsWith('/ingredients')){if(sort.startsWith('name_'))return text(row,0).toLowerCase();if(sort.startsWith('cost_'))return n(text(row,3));if(sort.startsWith('used_'))return n(text(row,4))}
   if(path.startsWith('/prepared-components')||path.startsWith('/bulk-recipes')){if(sort.startsWith('name_'))return text(row,0).toLowerCase();if(sort.startsWith('batch_'))return n(text(row,2));if(sort.startsWith('unit_'))return n(text(row,3));if(sort.startsWith('used_'))return n(text(row,4))}
   if(path.startsWith('/menu-costing')||path.startsWith('/menu-items')){if(sort.startsWith('name_'))return text(row,0).toLowerCase();if(sort.startsWith('sell_'))return n(text(row,2));if(sort.startsWith('cost_'))return n(text(row,3));if(sort.startsWith('food_'))return n(text(row,4));if(sort.startsWith('contrib_'))return n(text(row,5))}
@@ -53,7 +53,7 @@ export default function SearchFilters(){
       table.querySelectorAll(':scope > .filter-missing-price-row').forEach(x=>x.remove());
       (j.ingredients||[]).filter(i=>!i.latest_price).forEach(i=>{
         const row=document.createElement('div');row.className='trow filter-missing-price-row';row.dataset.priceStatus='missing';row.dataset.flagged=i.is_flagged?'true':'false';
-        row.innerHTML=`<span>—</span><span><b>${String(i.name||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}</b><small>No purchase price recorded</small></span><span>—</span><span><em class="bad">Missing</em></span><span>—</span><span>—</span>`;
+        row.innerHTML=`<span>—</span><span><b>${String(i.name||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}</b><small>No purchase price recorded</small></span><span><small>Ingredient</small></span><span>—</span><span><em class="bad">Missing</em></span><span>—</span><span>—</span>`;
         table.appendChild(row);
       });
       setTick(x=>x+1);
@@ -62,11 +62,11 @@ export default function SearchFilters(){
   },[path]);
   useEffect(()=>{
     if(!cfg)return;const table=document.querySelector('.v2-table');if(!table)return;const rows=[...table.querySelectorAll(':scope > .trow')];table.classList.add('filter-sort-table');const facets=new Set(),units=new Set();
-    rows.forEach(row=>{row.hidden=false;if(cfg.facet==='supplier'&&row.dataset.priceStatus!=='missing')facets.add(text(row,5)||'—');if(cfg.facet==='category')facets.add(text(row,1)||'—');if(path.startsWith('/ingredients'))units.add(text(row,1)||'—')});
+    rows.forEach(row=>{row.hidden=false;if(cfg.facet==='supplier'&&row.dataset.priceStatus!=='missing')facets.add(text(row,6)||'—');if(cfg.facet==='category')facets.add(text(row,1)||'—');if(path.startsWith('/ingredients'))units.add(text(row,1)||'—')});
     setOptions([...facets].filter(Boolean).sort((a,b)=>a.localeCompare(b)));setUnitOptions([...units].filter(Boolean).sort((a,b)=>a.localeCompare(b)));
     let seen=new Set();rows.forEach(row=>{
       let visible=true;
-      if(cfg.facet==='supplier'&&facet!=='all')visible=text(row,5)===facet;
+      if(cfg.facet==='supplier'&&facet!=='all')visible=text(row,6)===facet;
       if(cfg.facet==='category'&&facet!=='all')visible=text(row,1)===facet;
       if(cfg.facet==='price_status'&&facet==='missing')visible=/missing/i.test(text(row,2));
       if(cfg.facet==='price_status'&&facet==='priced')visible=!/missing/i.test(text(row,2));
@@ -74,7 +74,7 @@ export default function SearchFilters(){
       if(flagged==='unflagged')visible=visible&&row.dataset.flagged!=='true';
       if(path.startsWith('/ingredients')){const used=n(text(row,4));if(usage==='used')visible=visible&&Number.isFinite(used)&&used>0;if(usage==='unused')visible=visible&&(!Number.isFinite(used)||used===0);if(unit!=='all')visible=visible&&text(row,1)===unit}
       if(path.startsWith('/purchase-prices')){
-        const normalized=text(row,4),price=text(row,3),isMissing=/missing/i.test(price)||row.dataset.priceStatus==='missing',needsYield=/needs yield/i.test(normalized)||row.dataset.priceStatus==='needs_yield';
+        const sourceCost=text(row,4),plateCost=text(row,5),isMissing=/missing/i.test(sourceCost)||row.dataset.priceStatus==='missing',needsYield=/needs yield/i.test(plateCost)||row.dataset.priceStatus==='needs_yield';
         if(priceStatus==='all'&&isMissing)visible=false;
         if(priceStatus==='missing')visible=visible&&isMissing;
         if(priceStatus==='needs_yield')visible=visible&&needsYield&&!isMissing;
@@ -106,7 +106,7 @@ export default function SearchFilters(){
         <label><span>Sort by</span><select value={sort} onChange={e=>setSort(e.target.value)}>{cfg.sorts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
         {cfg.facet==='supplier'&&<label><span>Supplier</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All suppliers</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
         {cfg.facet==='category'&&<label><span>Category</span><select value={facet} onChange={e=>setFacet(e.target.value)}><option value="all">All categories</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}
-        {isPrices&&<label className="global-filter-check"><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/><span>Latest record per ingredient only</span></label>}
+        {isPrices&&<label className="global-filter-check"><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/><span>Latest record per item only</span></label>}
       </>}
       <div className="global-filter-actions"><button type="button" onClick={reset}>Reset</button><button type="button" className="primary" onClick={()=>setOpen(false)}>Done</button></div>
     </div>}
