@@ -52,9 +52,83 @@ async function importMenuRows(sql,rows,tid){
   return{created:results.filter(r=>r.status==="created").length,updated:results.filter(r=>r.status==="updated").length,skipped:results.filter(r=>r.status==="skipped").length,results};
 }
 
+async function importBulkRows(sql,rows,tid){
+  const grouped=new Map();
+  for(let index=0;index<rows.length;index++){
+    const row=rows[index]||{};
+    const name=String(row.recipe_name||row.name||"").trim();
+    const groupKey=name.toLowerCase()||("__blank_"+index);
+    if(!grouped.has(groupKey))grouped.set(groupKey,{name,yield_quantity:row.yield_quantity,yield_unit:row.yield_unit,rows:[]});
+    const g=grouped.get(groupKey);
+    if(!g.yield_quantity&&row.yield_quantity)g.yield_quantity=row.yield_quantity;
+    if(!g.yield_unit&&row.yield_unit)g.yield_unit=row.yield_unit;
+    g.rows.push({...row,_index:index});
+  }
+
+  const results=[];
+  for(const g of grouped.values()){
+    if(!g.name){results.push({status:"skipped",name:"",reason:"Blank recipe name"});continue;}
+    const yieldQty=Number(g.yield_quantity),yieldUnit=String(g.yield_unit||"").trim();
+    if(!(yieldQty>0)||!yieldUnit){results.push({status:"skipped",name:g.name,reason:"Batch Yield and Yield Unit are required"});continue;}
+    if(g.rows.length>500){results.push({status:"skipped",name:g.name,reason:"Recipe has more than 500 component rows"});continue;}
+
+    const components=[];
+    const missing=[];
+    for(const row of g.rows){
+      const componentName=String(row.component_name||row.ingredient_name||"").trim();
+      const type=String(row.component_type||"ingredient").trim().toLowerCase();
+      const qty=Number(row.quantity),unit=String(row.unit||"").trim();
+      if(!componentName){missing.push("row "+(row.source_row||row._index+2)+": component name is blank");continue;}
+      if(!(qty>0)||!unit){missing.push(componentName+": quantity and unit are required");continue;}
+      if(type==="bulk"){
+        const [found]=await sql`SELECT id,name FROM recipes WHERE tenant_id=${tid} AND recipe_type='bulk' AND is_active=true AND lower(name)=lower(${componentName}) LIMIT 1`;
+        if(!found){missing.push(componentName+" (bulk recipe not found)");continue;}
+        components.push({kind:"bulk",id:found.id,quantity:qty,unit,notes:String(row.notes||"").trim()||null,name:found.name});
+      }else if(type==="ingredient"){
+        const [found]=await sql`SELECT id,name FROM ingredients WHERE tenant_id=${tid} AND is_active=true AND lower(name)=lower(${componentName}) LIMIT 1`;
+        if(!found){missing.push(componentName+" (ingredient not found)");continue;}
+        components.push({kind:"ingredient",id:found.id,quantity:qty,unit,notes:String(row.notes||"").trim()||null,name:found.name});
+      }else{
+        missing.push(componentName+" (Component Type must be ingredient or bulk)");
+      }
+    }
+    if(missing.length){results.push({status:"skipped",name:g.name,reason:missing.slice(0,5).join("; ")+(missing.length>5?"; +"+(missing.length-5)+" more":"")});continue;}
+    if(!components.length){results.push({status:"skipped",name:g.name,reason:"No valid components found"});continue;}
+
+    const [existing]=await sql`SELECT id,current_version_id FROM recipes WHERE tenant_id=${tid} AND recipe_type='bulk' AND is_active=true AND lower(name)=lower(${g.name}) LIMIT 1`;
+    const recipeId=existing?.id||randomUUID();
+    let versionNo=1;
+    if(existing){
+      const [last]=await sql`SELECT COALESCE(MAX(version_no),0) AS version_no FROM recipe_versions WHERE recipe_id=${recipeId}`;
+      versionNo=Number(last?.version_no||0)+1;
+    }
+    const versionId=randomUUID();
+    const queries=[];
+    if(existing)queries.push(sql`UPDATE recipes SET name=${g.name},updated_at=NOW() WHERE id=${recipeId} AND tenant_id=${tid}`);
+    else queries.push(sql`INSERT INTO recipes (id,tenant_id,name,recipe_type,category) VALUES (${recipeId},${tid},${g.name},'bulk',null)`);
+    queries.push(sql`INSERT INTO recipe_versions (id,recipe_id,version_no,status,yield_quantity,yield_unit,prep_time_minutes,cook_time_minutes,kitchen_notes,selling_price,target_food_cost,delivery_commission_pct,payment_fee_pct,other_variable_pct,delivery_fixed_cost) VALUES (${versionId},${recipeId},${versionNo},'recorded',${yieldQty},${yieldUnit},null,null,null,null,35,0,0,0,0)`);
+    components.forEach((x,n)=>queries.push(sql`INSERT INTO recipe_components (recipe_version_id,sort_order,ingredient_id,bulk_recipe_id,quantity,unit,notes) VALUES (${versionId},${n},${x.kind==="ingredient"?x.id:null},${x.kind==="bulk"?x.id:null},${x.quantity},${x.unit},${x.notes})`));
+    queries.push(sql`UPDATE recipes SET current_version_id=${versionId},updated_at=NOW() WHERE id=${recipeId} AND tenant_id=${tid}`);
+    await sql.transaction(queries,{isolationLevel:"Serializable"});
+    results.push({status:existing?"updated":"created",id:recipeId,name:g.name,component_count:components.length});
+  }
+  return{
+    created:results.filter(r=>r.status==="created").length,
+    updated:results.filter(r=>r.status==="updated").length,
+    skipped:results.filter(r=>r.status==="skipped").length,
+    results
+  };
+}
+
 export async function POST(req){
   const rid=requestId(req);try{
     const raw=await readJson(req),sql=db(),tenant=await requireRole(['owner','admin','manager']),tid=tenant.id;
+    if(Array.isArray(raw.rows)&&(raw.import_type==="bulk"||raw.type==="bulk")){
+      list(raw.rows,{field:"rows",max:5000});
+      const result=await importBulkRows(sql,raw.rows,tid);
+      await recordAudit(sql,{tenant,action:"import",entityType:"bulk_recipe",entityName:"Bulk recipe import",after:{created:result.created,updated:result.updated,skipped:result.skipped},metadata:{row_count:raw.rows.length},requestId:rid});
+      return NextResponse.json(result,{status:201});
+    }
     if(Array.isArray(raw.rows)&&(raw.import_type==="menu"||raw.type==="menu")){
       list(raw.rows,{field:"rows",max:2000});
       const result=await importMenuRows(sql,raw.rows,tid);
